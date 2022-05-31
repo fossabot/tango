@@ -16,25 +16,29 @@ lazy_static! {
 
 pub trait Hooks {
     fn fastforwarder_traps(
-        &self,
+        &'static self,
         ff_state: fastforwarder::State,
     ) -> Vec<(u32, Box<dyn FnMut(mgba::core::CoreMutRef)>)>;
 
     fn shadow_traps(
-        &self,
+        &'static self,
         shadow_state: shadow::State,
     ) -> Vec<(u32, Box<dyn FnMut(mgba::core::CoreMutRef)>)>;
 
     fn primary_traps(
-        &self,
+        &'static self,
         handle: tokio::runtime::Handle,
         joyflags: std::sync::Arc<std::sync::atomic::AtomicU32>,
         facade: facade::Facade,
     ) -> Vec<(u32, Box<dyn FnMut(mgba::core::CoreMutRef)>)>;
 
-    fn prepare_for_fastforward(&self, core: mgba::core::CoreMutRef);
+    fn replace_opponent_name(&'static self, core: mgba::core::CoreMutRef, name: &str);
 
-    fn replace_opponent_name(&self, core: mgba::core::CoreMutRef, name: &str);
+    fn raw_input_size(&'static self) -> u8;
 
-    fn current_tick(&self, core: mgba::core::CoreMutRef) -> u32;
+    fn set_joyflags_in_rx(&'static self, rx: &mut [u8], joyflags: u16);
+
+    fn joyflags_in_tx(&'static self, tx: &[u8]) -> u16;
+
+    fn current_tick(&'static self, core: mgba::core::CoreMutRef) -> u32;
 }

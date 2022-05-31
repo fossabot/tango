@@ -106,8 +106,11 @@ impl State {
             .pop_front()
     }
 
-    pub fn set_anyhow_error(&self, err: anyhow::Error) {
-        self.0.lock().as_mut().expect("error").error = Some(err);
+    pub fn set_error<E>(&self, err: E)
+    where
+        E: Into<anyhow::Error>,
+    {
+        self.0.lock().as_mut().expect("error").error = Some(err.into());
     }
 
     pub fn local_player_index(&self) -> u8 {
@@ -182,7 +185,7 @@ impl Fastforwarder {
         state: &mgba::state::State,
         commit_pairs: &[input::Pair<input::Input, input::Input>],
         last_committed_remote_input: input::Input,
-        local_player_inputs_left: &[input::PartialInput],
+        local_inputs: &[input::Input],
     ) -> anyhow::Result<(
         mgba::state::State,
         mgba::state::State,
@@ -191,36 +194,32 @@ impl Fastforwarder {
         let input_pairs = commit_pairs
             .iter()
             .cloned()
-            .chain(local_player_inputs_left.iter().cloned().map(|local| {
-                let local_tick = local.local_tick;
-                let remote_tick = local.remote_tick;
+            .chain(local_inputs.iter().cloned().map(|local| {
+                let mut predicted_joyflags = 0;
+                if last_committed_remote_input.joyflags & mgba::input::keys::A as u16 != 0 {
+                    predicted_joyflags |= mgba::input::keys::A as u16;
+                }
+                if last_committed_remote_input.joyflags & mgba::input::keys::B as u16 != 0 {
+                    predicted_joyflags |= mgba::input::keys::B as u16;
+                }
+
+                // TODO: Double check if this is correct.
+                let mut predicted_rx = last_committed_remote_input.rx.clone();
+                self.hooks
+                    .set_joyflags_in_rx(&mut predicted_rx, predicted_joyflags);
+
                 input::Pair {
                     local: input::Input {
-                        local_tick,
-                        remote_tick,
+                        local_tick: local.local_tick,
+                        remote_tick: local.remote_tick,
                         joyflags: local.joyflags,
-                        custom_screen_state: 0, // TODO
-                        turn: vec![],
+                        rx: vec![0; self.hooks.raw_input_size() as usize], // TODO: Not this
                     },
                     remote: input::Input {
-                        local_tick,
-                        remote_tick,
-                        joyflags: {
-                            let mut joyflags = 0;
-                            if last_committed_remote_input.joyflags & mgba::input::keys::A as u16
-                                != 0
-                            {
-                                joyflags |= mgba::input::keys::A as u16;
-                            }
-                            if last_committed_remote_input.joyflags & mgba::input::keys::B as u16
-                                != 0
-                            {
-                                joyflags |= mgba::input::keys::B as u16;
-                            }
-                            joyflags
-                        },
-                        custom_screen_state: last_committed_remote_input.custom_screen_state,
-                        turn: vec![],
+                        local_tick: local.local_tick,
+                        remote_tick: local.remote_tick,
+                        joyflags: predicted_joyflags,
+                        rx: predicted_rx,
                     },
                 }
             }))
@@ -228,7 +227,6 @@ impl Fastforwarder {
         let last_input = input_pairs.last().expect("last input pair").clone();
 
         self.core.as_mut().load_state(state)?;
-        self.hooks.prepare_for_fastforward(self.core.as_mut());
 
         let start_current_tick = self.hooks.current_tick(self.core.as_mut());
         let commit_time = start_current_tick + commit_pairs.len() as u32;
@@ -242,6 +240,19 @@ impl Fastforwarder {
             Box::new(|| {}),
             Box::new(|| {}),
         ));
+
+        {
+            let mut inner_state_guard = self.state.0.lock();
+            let mut inner_state = inner_state_guard.as_mut().unwrap();
+
+            if start_current_tick == commit_time {
+                inner_state.committed_state = Some(state.clone());
+            }
+
+            if start_current_tick == dirty_time {
+                inner_state.dirty_state = Some(state.clone());
+            }
+        }
 
         loop {
             {
