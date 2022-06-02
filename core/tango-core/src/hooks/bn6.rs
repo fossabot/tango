@@ -701,7 +701,7 @@ impl hooks::Hooks for BN6 {
 
                             core.gba_mut()
                                 .cpu_mut()
-                                .set_gpr(4, ip.remote.joyflags as i32);
+                                .set_gpr(4, (ip.remote.joyflags | 0xfc00) as i32);
                         }
 
                         if round.take_input_injected() {
@@ -869,7 +869,7 @@ impl hooks::Hooks for BN6 {
 
                         core.gba_mut()
                             .cpu_mut()
-                            .set_gpr(4, ip.local.joyflags as i32);
+                            .set_gpr(4, (ip.local.joyflags | 0xfc00) as i32);
 
                         if current_tick == ff_state.dirty_time() {
                             ff_state.set_dirty_state(core.save_state().expect("save dirty state"));
