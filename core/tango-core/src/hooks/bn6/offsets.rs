@@ -83,8 +83,6 @@ pub(super) struct ROMOffsets {
     pub(super) round_start_ret: u32,
 
     /// This hooks the point after the battle end routine is complete.
-    ///
-    /// This is only used for the replay viewer to know when to end.
     pub(super) round_end_entry: u32,
 
     /// This hooks the point determining if the player is player 2 or not.

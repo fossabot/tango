@@ -176,7 +176,7 @@ impl hooks::Hooks for BN6 {
                 let facade = facade.clone();
                 let handle = handle.clone();
                 (
-                    self.offsets.rom.round_ending_ret,
+                    self.offsets.rom.round_end_entry,
                     Box::new(move |_| {
                         handle.block_on(async {
                             let match_ = match facade.match_().await {
@@ -188,23 +188,6 @@ impl hooks::Hooks for BN6 {
 
                             let mut round_state = match_.lock_round_state().await;
                             round_state.end_round().await.expect("end round");
-                        });
-                    }),
-                )
-            },
-            {
-                let facade = facade.clone();
-                let handle = handle.clone();
-                (
-                    self.offsets.rom.round_end_entry,
-                    Box::new(move |_| {
-                        handle.block_on(async {
-                            let match_ = match facade.match_().await {
-                                Some(match_) => match_,
-                                None => {
-                                    return;
-                                }
-                            };
 
                             match_
                                 .advance_shadow_until_round_end()
@@ -444,14 +427,18 @@ impl hooks::Hooks for BN6 {
                             };
 
                             let mut round_state = match_.lock_round_state().await;
-                            let round = match round_state.round.as_mut() {
-                                Some(round) => round,
-                                None => {
-                                    return;
-                                }
+
+                            let round = if let Some(round) = round_state.round.as_mut() {
+                                round
+                            } else {
+                                return;
                             };
 
-                            let ip = round.take_last_input().expect("last input");
+                            let ip = if let Some(ip) = round.take_last_input() {
+                                ip
+                            } else {
+                                return;
+                            };
 
                             munger.set_rx_packet(
                                 core,

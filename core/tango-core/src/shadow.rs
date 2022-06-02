@@ -126,6 +126,7 @@ impl State {
     }
 
     pub fn end_round(&self) {
+        log::info!("shadow round ended");
         let mut round_state = self.0.round_state.lock();
         round_state.round = None;
     }
@@ -199,11 +200,6 @@ impl Shadow {
         log::info!("advancing shadow until round end");
         self.hooks.prepare_for_fastforward(self.core.as_mut());
         loop {
-            self.core.as_mut().run_loop();
-            if let Some(err) = self.state.0.error.lock().take() {
-                return Err(err);
-            }
-
             let round_state = self.state.lock_round_state();
             if round_state.round.is_none() {
                 self.core
@@ -220,33 +216,59 @@ impl Shadow {
                     .expect("load state");
                 return Ok(());
             }
+
+            self.core.as_mut().run_loop();
+            if let Some(err) = self.state.0.error.lock().take() {
+                return Err(err);
+            }
         }
     }
 
     pub fn apply_input(
         &mut self,
         input: input::Pair<input::Input, input::PartialInput>,
-    ) -> anyhow::Result<input::Pair<input::Input, input::Input>> {
+    ) -> anyhow::Result<Option<input::Pair<input::Input, input::Input>>> {
         {
             let mut round_state = self.state.lock_round_state();
-            let round = round_state.round.as_mut().expect("round");
+            let round = if let Some(round) = round_state.round.as_mut() {
+                round
+            } else {
+                // No round in progress, no input may be applied.
+                return Ok(None);
+            };
             round.pending_in_input = Some(input);
         }
+
         self.hooks.prepare_for_fastforward(self.core.as_mut());
         loop {
             self.core.as_mut().run_loop();
             if let Some(err) = self.state.0.error.lock().take() {
                 return Err(err);
             }
-            if let Some(applied_state) = self.state.0.applied_state.lock().take() {
-                self.core
-                    .as_mut()
-                    .load_state(&applied_state)
-                    .expect("load state");
-                let mut round_state = self.state.lock_round_state();
-                let round = round_state.round.as_mut().expect("round");
-                return Ok(round.pending_out_input.take().expect("pending out input"));
-            }
+
+            let mut round_state = self.state.lock_round_state();
+            let round = if let Some(round) = round_state.round.as_mut() {
+                round
+            } else {
+                // Round ended during processing, drop remaining inputs.
+                return Ok(None);
+            };
+
+            let applied_state =
+                if let Some(applied_state) = self.state.0.applied_state.lock().take() {
+                    applied_state
+                } else {
+                    continue;
+                };
+
+            self.core
+                .as_mut()
+                .load_state(&applied_state)
+                .expect("load state");
+
+            return Ok(Some(
+                round.pending_out_input.take().expect("pending out input"),
+            ));
         }
     }
 }
