@@ -1,15 +1,9 @@
 use crate::{hooks, input};
 
-struct PendingTurn {
-    tx_buf: Vec<u8>,
-    on_tick: u32,
-}
-
 pub struct Round {
     local_player_index: u8,
     is_accepting_input: bool,
     first_committed_state: Option<mgba::state::State>,
-    pending_out_turn: Option<PendingTurn>,
     pending_in_input: Option<input::Pair<input::Input, input::PartialInput>>,
     pending_out_input: Option<input::Pair<input::Input, input::Input>>,
     input_injected: bool,
@@ -39,23 +33,6 @@ impl Round {
 
     pub fn has_first_committed_state(&self) -> bool {
         self.first_committed_state.is_some()
-    }
-
-    pub fn set_pending_out_turn(&mut self, tx_buf: Vec<u8>, on_tick: u32) {
-        self.pending_out_turn = Some(PendingTurn { on_tick, tx_buf });
-    }
-
-    pub fn take_pending_out_turn(&mut self, current_tick: u32) -> Vec<u8> {
-        match &mut self.pending_out_turn {
-            Some(pt) => {
-                if pt.on_tick == current_tick {
-                    self.pending_out_turn.take().unwrap().tx_buf
-                } else {
-                    vec![]
-                }
-            }
-            None => vec![],
-        }
     }
 
     pub fn take_in_input_pair(&mut self) -> Option<input::Pair<input::Input, input::PartialInput>> {
@@ -97,8 +74,6 @@ struct InnerState {
     is_offerer: bool,
     round_state: parking_lot::Mutex<RoundState>,
     rng: parking_lot::Mutex<rand_pcg::Mcg128Xsl64>,
-    pending_in_init: parking_lot::Mutex<Option<Vec<u8>>>,
-    pending_out_init: parking_lot::Mutex<Option<Vec<u8>>>,
     applied_state: parking_lot::Mutex<Option<mgba::state::State>>,
     error: parking_lot::Mutex<Option<anyhow::Error>>,
 }
@@ -127,8 +102,6 @@ impl State {
                 round: None,
                 won_last_round,
             }),
-            pending_in_init: parking_lot::Mutex::new(None),
-            pending_out_init: parking_lot::Mutex::new(None),
             applied_state: parking_lot::Mutex::new(None),
             error: parking_lot::Mutex::new(None),
         }))
@@ -150,21 +123,12 @@ impl State {
         self.0.round_state.lock()
     }
 
-    pub fn set_pending_out_init(&self, tx_buf: Vec<u8>) {
-        *self.0.pending_out_init.lock() = Some(tx_buf);
-    }
-
-    pub fn take_pending_in_init(&self) -> Option<Vec<u8>> {
-        self.0.pending_in_init.lock().take()
-    }
-
     pub fn start_round(&self) {
         let mut round_state = self.0.round_state.lock();
         round_state.round = Some(Round {
             local_player_index: if round_state.won_last_round { 0 } else { 1 },
             is_accepting_input: false,
             first_committed_state: None,
-            pending_out_turn: None,
             pending_in_input: None,
             pending_out_input: None,
             input_injected: false,
@@ -218,34 +182,6 @@ impl Shadow {
         core.as_mut().reset();
 
         Ok(Shadow { core, hooks, state })
-    }
-
-    pub fn exchange_init(&mut self, local_init: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        log::info!("exchanging init with shadow");
-        *self.state.0.pending_in_init.lock() = Some(local_init);
-
-        loop {
-            self.core.as_mut().run_loop();
-            if let Some(err) = self.state.0.error.lock().take() {
-                return Err(err);
-            }
-            if let Some(buf) = self.state.0.pending_out_init.lock().take() {
-                log::info!("init exchanged!");
-                self.core
-                    .as_mut()
-                    .load_state(
-                        &self
-                            .state
-                            .0
-                            .applied_state
-                            .lock()
-                            .take()
-                            .expect("applied state"),
-                    )
-                    .expect("load state");
-                return Ok(buf);
-            }
-        }
     }
 
     pub fn advance_until_first_committed_state(&mut self) -> anyhow::Result<mgba::state::State> {

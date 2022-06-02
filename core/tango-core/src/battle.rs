@@ -193,13 +193,6 @@ impl Match {
         self.shadow.lock().await.advance_until_round_end()
     }
 
-    pub async fn exchange_init_with_shadow(&self, local_init: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-        log::info!("local init: {:?}", local_init);
-        let remote_init = self.shadow.lock().await.exchange_init(local_init)?;
-        log::info!("remote init: {:?}", remote_init);
-        Ok(remote_init)
-    }
-
     pub async fn advance_shadow_until_first_committed_state(
         &self,
     ) -> anyhow::Result<mgba::state::State> {
@@ -353,8 +346,7 @@ impl Match {
                 local_tick: 0,
                 remote_tick: 0,
                 joyflags: 0,
-                custom_screen_state: 0,
-                turn: vec![],
+                rx: vec![0; 0x10], // TODO
             },
             last_input: None,
             first_state_committed_tx: Some(first_state_committed_tx),
@@ -365,6 +357,7 @@ impl Match {
                 Box::new(replay_file),
                 &self.settings.replay_metadata,
                 local_player_index,
+                0x10, // TODO
             )?),
             fastforwarder: fastforwarder::Fastforwarder::new(
                 &self.rom_path,
@@ -389,8 +382,7 @@ struct PendingTurn {
 
 struct LocalImmediateInput {
     current_tick: u32,
-    custom_screen_state: u8,
-    turn: Vec<u8>,
+    rx: Vec<u8>,
 }
 
 pub struct Round {
@@ -474,8 +466,7 @@ impl Round {
         mut core: mgba::core::CoreMutRef<'_>,
         current_tick: u32,
         joyflags: u16,
-        custom_screen_state: u8,
-        turn: Vec<u8>,
+        rx: Vec<u8>,
     ) -> bool {
         let local_tick = current_tick + self.local_delay();
         let remote_tick = self.last_committed_remote_input().local_tick;
@@ -514,11 +505,7 @@ impl Round {
         });
 
         self.local_immediate_input_queue
-            .push_back(LocalImmediateInput {
-                current_tick,
-                custom_screen_state,
-                turn,
-            });
+            .push_back(LocalImmediateInput { current_tick, rx });
 
         let (input_pairs, left) = match self.consume_and_peek_local().await {
             Ok(r) => r,
@@ -625,8 +612,7 @@ impl Round {
                     .pop_front()
                     .unwrap_or_else(|| LocalImmediateInput {
                         current_tick: pair.local.local_tick,
-                        custom_screen_state: 0,
-                        turn: vec![],
+                        rx: vec![0; 0x10], // TODO
                     });
                 if imm.current_tick != pair.local.local_tick {
                     anyhow::bail!(
@@ -640,8 +626,7 @@ impl Round {
                         local_tick: pair.local.local_tick,
                         remote_tick: pair.local.remote_tick,
                         joyflags: pair.local.joyflags,
-                        custom_screen_state: imm.custom_screen_state,
-                        turn: imm.turn,
+                        rx: imm.rx,
                     },
                     remote: pair.remote,
                 })

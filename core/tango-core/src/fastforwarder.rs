@@ -199,8 +199,7 @@ impl Fastforwarder {
                         local_tick,
                         remote_tick,
                         joyflags: local.joyflags,
-                        custom_screen_state: 0, // TODO
-                        turn: vec![],
+                        rx: vec![0; 0x16], // TODO
                     },
                     remote: input::Input {
                         local_tick,
@@ -219,8 +218,7 @@ impl Fastforwarder {
                             }
                             joyflags
                         },
-                        custom_screen_state: last_committed_remote_input.custom_screen_state,
-                        turn: vec![],
+                        rx: vec![0; 0x16], // TODO
                     },
                 }
             }))
