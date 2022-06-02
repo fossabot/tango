@@ -199,7 +199,7 @@ impl Fastforwarder {
                         local_tick,
                         remote_tick,
                         joyflags: local.joyflags,
-                        rx: vec![0; 0x10], // TODO
+                        rx: self.hooks.placeholder_rx(),
                     },
                     remote: input::Input {
                         local_tick,

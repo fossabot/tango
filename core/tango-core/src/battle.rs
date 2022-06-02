@@ -345,7 +345,7 @@ impl Match {
                 local_tick: 0,
                 remote_tick: 0,
                 joyflags: 0,
-                rx: vec![0; 0x10], // TODO
+                rx: self.hooks.placeholder_rx(),
             },
             last_input: None,
             first_state_committed_tx: Some(first_state_committed_tx),
@@ -355,7 +355,7 @@ impl Match {
                 Box::new(replay_file),
                 &self.settings.replay_metadata,
                 local_player_index,
-                0x10, // TODO
+                self.hooks.placeholder_rx().len() as u8,
             )?),
             fastforwarder: fastforwarder::Fastforwarder::new(
                 &self.rom_path,
@@ -366,6 +366,7 @@ impl Match {
             primary_thread_handle: self.primary_thread_handle.clone(),
             transport: self.transport.clone(),
             shadow: self.shadow.clone(),
+            hooks: self.hooks,
         });
         self.round_started_tx.send(round_state.number).await?;
         log::info!("round has started");
@@ -394,6 +395,7 @@ pub struct Round {
     primary_thread_handle: mgba::thread::Handle,
     transport: std::sync::Arc<tokio::sync::Mutex<transport::Transport>>,
     shadow: std::sync::Arc<tokio::sync::Mutex<shadow::Shadow>>,
+    hooks: &'static Box<dyn hooks::Hooks + Send + Sync>,
 }
 
 impl Round {
@@ -600,7 +602,7 @@ impl Round {
                     .pop_front()
                     .unwrap_or_else(|| LocalImmediateInput {
                         current_tick: pair.local.local_tick,
-                        rx: vec![0; 0x10], // TODO
+                        rx: self.hooks.placeholder_rx(),
                     });
                 if imm.current_tick != pair.local.local_tick {
                     anyhow::bail!(
