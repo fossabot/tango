@@ -218,7 +218,7 @@ impl Fastforwarder {
                             }
                             joyflags
                         },
-                        rx: vec![0; 0x10], // TODO
+                        rx: last_committed_remote_input.rx.clone(),
                     },
                 }
             }))

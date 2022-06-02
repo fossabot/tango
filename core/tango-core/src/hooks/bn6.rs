@@ -458,6 +458,7 @@ impl hooks::Hooks for BN6 {
                                 round.local_player_index() as u32,
                                 &ip.local.rx.try_into().unwrap(),
                             );
+
                             munger.set_rx_packet(
                                 core,
                                 round.remote_player_index() as u32,
@@ -873,6 +874,54 @@ impl hooks::Hooks for BN6 {
                         if current_tick == ff_state.dirty_time() {
                             ff_state.set_dirty_state(core.save_state().expect("save dirty state"));
                         }
+                    }),
+                )
+            },
+            {
+                let munger = self.munger.clone();
+                let ff_state = ff_state.clone();
+                (
+                    self.offsets.rom.copy_input_data_entry,
+                    Box::new(move |core| {
+                        let current_tick = munger.current_tick(core);
+
+                        let ip = match ff_state.pop_input_pair() {
+                            Some(ip) => ip,
+                            None => {
+                                return;
+                            }
+                        };
+
+                        if ip.local.local_tick != ip.remote.local_tick {
+                            ff_state.set_anyhow_error(anyhow::anyhow!(
+                                "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
+                                current_tick,
+                                ip.local.local_tick,
+                                ip.local.local_tick
+                            ));
+                            return;
+                        }
+
+                        if ip.local.local_tick != current_tick {
+                            ff_state.set_anyhow_error(anyhow::anyhow!(
+                                "copy input data: input tick != in battle tick: {} != {}",
+                                ip.local.local_tick,
+                                current_tick,
+                            ));
+                            return;
+                        }
+
+                        munger.set_rx_packet(
+                            core,
+                            ff_state.local_player_index() as u32,
+                            &ip.local.rx.try_into().unwrap(),
+                        );
+
+                        munger.set_rx_packet(
+                            core,
+                            ff_state.remote_player_index() as u32,
+                            &ip.remote.rx.try_into().unwrap(),
+                        );
                     }),
                 )
             },
