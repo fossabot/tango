@@ -290,7 +290,7 @@ impl hooks::Hooks for BN6 {
                         handle.block_on(async {
                             let mut r0 = core.as_ref().gba().cpu().gpr(0);
                             if r0 != 2 {
-                                log::warn!("expected r0 to be 2 but got {}", r0);
+                                log::error!("expected r0 to be 2 but got {}", r0);
                             }
 
                             if facade.match_().await.is_none() {
@@ -306,7 +306,7 @@ impl hooks::Hooks for BN6 {
                 (
                     self.offsets.rom.comm_menu_handle_link_cable_input_entry,
                     Box::new(move |core| {
-                        log::warn!(
+                        log::error!(
                             "unhandled call to commMenu_handleLinkCableInput at 0x{:0x}: uh oh!",
                             core.as_ref().gba().cpu().gpr(15) - 4
                         );
@@ -600,7 +600,7 @@ impl hooks::Hooks for BN6 {
                     Box::new(move |core| {
                         let r0 = core.as_ref().gba().cpu().gpr(0);
                         if r0 != 2 {
-                            log::warn!("shadow: expected r0 to be 2 but got {}", r0);
+                            log::error!("shadow: expected r0 to be 2 but got {}", r0);
                         }
                     }),
                 )
@@ -609,7 +609,7 @@ impl hooks::Hooks for BN6 {
                 (
                     self.offsets.rom.comm_menu_handle_link_cable_input_entry,
                     Box::new(move |core| {
-                        log::warn!(
+                        log::error!(
                             "unhandled call to commMenu_handleLinkCableInput at 0x{:0x}: uh oh!",
                             core.as_ref().gba().cpu().gpr(15) - 4
                         );
@@ -659,10 +659,6 @@ impl hooks::Hooks for BN6 {
                                 return;
                             }
                         };
-
-                        if !round.is_accepting_input() {
-                            return;
-                        }
 
                         if !round.has_first_committed_state() {
                             round.set_first_committed_state(core.save_state().expect("save state"));
@@ -724,12 +720,6 @@ impl hooks::Hooks for BN6 {
                         let mut round_state = shadow_state.lock_round_state();
                         let round = round_state.round.as_mut().expect("round");
 
-                        if !round.is_accepting_input() {
-                            round.start_accepting_input();
-                            log::info!("shadow is now accepting input");
-                            return;
-                        }
-
                         let ip = if let Some(ip) = round.peek_out_input_pair().as_ref() {
                             ip
                         } else {
@@ -744,11 +734,11 @@ impl hooks::Hooks for BN6 {
 
                         if ip.local.local_tick != ip.remote.local_tick {
                             shadow_state.set_anyhow_error(anyhow::anyhow!(
-                                    "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
-                                    current_tick,
-                                    ip.local.local_tick,
-                                    ip.remote.local_tick
-                                ));
+                                "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
+                                current_tick,
+                                ip.local.local_tick,
+                                ip.remote.local_tick
+                            ));
                             return;
                         }
 

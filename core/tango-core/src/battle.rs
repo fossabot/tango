@@ -286,7 +286,7 @@ impl Match {
 
                     round.add_remote_input(input::PartialInput {
                         local_tick: input.local_tick,
-                        remote_tick: input.local_tick + input.tick_diff as u32,
+                        remote_tick: (input.local_tick as i64 + input.tick_diff as i64) as u32,
                         joyflags: input.joyflags as u16,
                     });
                 }
@@ -469,7 +469,7 @@ impl Round {
         //
         // This is all done while the self is locked, so there are no TOCTTOU issues.
         if !self.can_add_local_input() {
-            log::warn!("local input buffer overflow!");
+            log::error!("local input buffer overflow!");
             return false;
         }
 
@@ -485,7 +485,7 @@ impl Round {
             )
             .await
         {
-            log::warn!("failed to send input: {}", e);
+            log::error!("failed to send input: {}", e);
             return false;
         }
 
@@ -501,7 +501,7 @@ impl Round {
         let (input_pairs, left) = match self.consume_and_peek_local().await {
             Ok(r) => r,
             Err(e) => {
-                log::warn!("failed to consume input: {}", e);
+                log::error!("failed to consume input: {}", e);
                 return false;
             }
         };

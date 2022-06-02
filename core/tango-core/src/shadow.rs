@@ -2,7 +2,6 @@ use crate::{hooks, input};
 
 pub struct Round {
     local_player_index: u8,
-    is_accepting_input: bool,
     first_committed_state: Option<mgba::state::State>,
     pending_in_input: Option<input::Pair<input::Input, input::PartialInput>>,
     pending_out_input: Option<input::Pair<input::Input, input::Input>>,
@@ -16,14 +15,6 @@ impl Round {
 
     pub fn remote_player_index(&self) -> u8 {
         1 - self.local_player_index
-    }
-
-    pub fn start_accepting_input(&mut self) {
-        self.is_accepting_input = true;
-    }
-
-    pub fn is_accepting_input(&mut self) -> bool {
-        self.is_accepting_input
     }
 
     pub fn set_first_committed_state(&mut self, state: mgba::state::State) {
@@ -127,7 +118,6 @@ impl State {
         let mut round_state = self.0.round_state.lock();
         round_state.round = Some(Round {
             local_player_index: if round_state.won_last_round { 0 } else { 1 },
-            is_accepting_input: false,
             first_committed_state: None,
             pending_in_input: None,
             pending_out_input: None,
