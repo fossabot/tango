@@ -341,7 +341,6 @@ impl Match {
                 MAX_QUEUE_LENGTH,
             ),
             remote_delay: self.settings.shadow_input_delay,
-            is_accepting_input: false,
             last_committed_remote_input: input::Input {
                 local_tick: 0,
                 remote_tick: 0,
@@ -352,7 +351,6 @@ impl Match {
             first_state_committed_tx: Some(first_state_committed_tx),
             first_state_committed_rx: Some(first_state_committed_rx),
             committed_state: None,
-            local_pending_turn: None,
             replay_writer: Some(replay::Writer::new(
                 Box::new(replay_file),
                 &self.settings.replay_metadata,
@@ -375,11 +373,6 @@ impl Match {
     }
 }
 
-struct PendingTurn {
-    tx_buf: Vec<u8>,
-    on_tick: u32,
-}
-
 struct LocalImmediateInput {
     current_tick: u32,
     rx: Vec<u8>,
@@ -391,13 +384,11 @@ pub struct Round {
     iq: input::PairQueue<input::PartialInput, input::PartialInput>,
     local_immediate_input_queue: std::collections::VecDeque<LocalImmediateInput>,
     remote_delay: u32,
-    is_accepting_input: bool,
     last_committed_remote_input: input::Input,
     last_input: Option<input::Pair<input::Input, input::Input>>,
     first_state_committed_tx: Option<tokio::sync::oneshot::Sender<()>>,
     first_state_committed_rx: Option<tokio::sync::oneshot::Receiver<()>>,
     committed_state: Option<mgba::state::State>,
-    local_pending_turn: Option<PendingTurn>,
     replay_writer: Option<replay::Writer>,
     fastforwarder: fastforwarder::Fastforwarder,
     primary_thread_handle: mgba::thread::Handle,
@@ -579,15 +570,6 @@ impl Round {
     pub fn remote_queue_length(&self) -> usize {
         self.iq.remote_queue_length()
     }
-
-    pub fn start_accepting_input(&mut self) {
-        self.is_accepting_input = true;
-    }
-
-    pub fn is_accepting_input(&self) -> bool {
-        self.is_accepting_input
-    }
-
     pub fn last_committed_remote_input(&self) -> input::Input {
         self.last_committed_remote_input.clone()
     }
@@ -670,23 +652,6 @@ impl Round {
     pub fn add_remote_input(&mut self, input: input::PartialInput) {
         log::debug!("remote input: {:?}", input);
         self.iq.add_remote_input(input);
-    }
-
-    pub fn add_local_pending_turn(&mut self, tx_buf: Vec<u8>, on_tick: u32) {
-        self.local_pending_turn = Some(PendingTurn { on_tick, tx_buf })
-    }
-
-    pub fn take_local_pending_turn(&mut self, current_tick: u32) -> Vec<u8> {
-        match &mut self.local_pending_turn {
-            Some(pt) => {
-                if pt.on_tick == current_tick {
-                    self.local_pending_turn.take().unwrap().tx_buf
-                } else {
-                    vec![]
-                }
-            }
-            None => vec![],
-        }
     }
 
     pub fn tps_adjustment(&self) -> f32 {

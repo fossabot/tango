@@ -3,8 +3,6 @@ use crate::{facade, fastforwarder, hooks, input, shadow};
 mod munger;
 mod offsets;
 
-const TURN_TX_DELAY: u32 = 0x100 / 0x4;
-
 #[derive(Clone)]
 pub struct BN6 {
     offsets: offsets::Offsets,
@@ -391,10 +389,6 @@ impl hooks::Hooks for BN6 {
                                     }
                                 };
 
-                                if !round.is_accepting_input() {
-                                    return;
-                                }
-
                                 let current_tick = munger.current_tick(core);
                                 if !round.has_committed_state() {
                                     round.set_first_committed_state(
@@ -416,8 +410,6 @@ impl hooks::Hooks for BN6 {
                                     log::info!("battle state committed on {}", current_tick);
                                 }
 
-                                let turn = round.take_local_pending_turn(current_tick);
-
                                 if !round
                                     .add_local_input_and_fastforward(
                                         core,
@@ -433,6 +425,45 @@ impl hooks::Hooks for BN6 {
                             }
                             facade.abort_match().await;
                         });
+                    }),
+                )
+            },
+            {
+                let facade = facade.clone();
+                let munger = self.munger.clone();
+                let handle = handle.clone();
+                (
+                    self.offsets.rom.copy_input_data_entry,
+                    Box::new(move |core| {
+                        handle.block_on(async {
+                            let match_ = match facade.match_().await {
+                                Some(match_) => match_,
+                                None => {
+                                    return;
+                                }
+                            };
+
+                            let mut round_state = match_.lock_round_state().await;
+                            let round = match round_state.round.as_mut() {
+                                Some(round) => round,
+                                None => {
+                                    return;
+                                }
+                            };
+
+                            let ip = round.take_last_input().expect("last input");
+
+                            munger.set_rx_packet(
+                                core,
+                                round.local_player_index() as u32,
+                                &ip.local.rx.try_into().unwrap(),
+                            );
+                            munger.set_rx_packet(
+                                core,
+                                round.remote_player_index() as u32,
+                                &ip.remote.rx.try_into().unwrap(),
+                            );
+                        })
                     }),
                 )
             },
@@ -679,6 +710,70 @@ impl hooks::Hooks for BN6 {
                         if round.take_input_injected() {
                             shadow_state.set_applied_state(core.save_state().expect("save state"));
                         }
+                    }),
+                )
+            },
+            {
+                let shadow_state = shadow_state.clone();
+                let munger = self.munger.clone();
+                (
+                    self.offsets.rom.copy_input_data_entry,
+                    Box::new(move |core| {
+                        let current_tick = munger.current_tick(core);
+
+                        let mut round_state = shadow_state.lock_round_state();
+                        let round = round_state.round.as_mut().expect("round");
+
+                        if !round.is_accepting_input() {
+                            round.start_accepting_input();
+                            log::info!("shadow is now accepting input");
+                            return;
+                        }
+
+                        let ip = if let Some(ip) = round.peek_out_input_pair().as_ref() {
+                            ip
+                        } else {
+                            return;
+                        };
+
+                        // HACK: This is required if the emulator advances beyond read joyflags and runs this function again, but is missing input data.
+                        // We permit this for one tick only, but really we should just not be able to get into this situation in the first place.
+                        if ip.local.local_tick + 1 == current_tick {
+                            return;
+                        }
+
+                        if ip.local.local_tick != ip.remote.local_tick {
+                            shadow_state.set_anyhow_error(anyhow::anyhow!(
+                                    "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
+                                    current_tick,
+                                    ip.local.local_tick,
+                                    ip.remote.local_tick
+                                ));
+                            return;
+                        }
+
+                        if ip.local.local_tick != current_tick {
+                            shadow_state.set_anyhow_error(anyhow::anyhow!(
+                                "copy input data: input tick != in battle tick: {} != {}",
+                                ip.local.local_tick,
+                                current_tick,
+                            ));
+                            return;
+                        }
+
+                        munger.set_rx_packet(
+                            core,
+                            round.local_player_index() as u32,
+                            &ip.local.rx.clone().try_into().unwrap(),
+                        );
+
+                        munger.set_rx_packet(
+                            core,
+                            round.remote_player_index() as u32,
+                            &ip.remote.rx.clone().try_into().unwrap(),
+                        );
+
+                        round.set_input_injected();
                     }),
                 )
             },
