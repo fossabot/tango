@@ -342,8 +342,7 @@ impl Match {
             last_committed_remote_input: input::Input {
                 local_tick: 0,
                 remote_tick: 0,
-                joyflags: 0,
-                rx: vec![0; self.hooks.raw_input_size() as usize],
+                baked: vec![0; self.hooks.raw_input_size() as usize],
             },
             last_input: None,
             first_state_committed_tx: Some(first_state_committed_tx),
@@ -414,8 +413,8 @@ impl Round {
             .write_state(&remote_state)
             .expect("write remote state");
         self.committed_state = Some(state);
-        if let Some(tx) = self.first_state_committed_tx.take() {
-            let _ = tx.send(());
+        if let Some(baked) = self.first_state_committed_tx.take() {
+            let _ = baked.send(());
         }
     }
 
@@ -429,8 +428,7 @@ impl Round {
             self.iq.add_local_input(input::Input {
                 local_tick: current_tick + i,
                 remote_tick: 0,
-                joyflags: 0,
-                rx: vec![0; self.hooks.raw_input_size() as usize],
+                baked: vec![0; self.hooks.raw_input_size() as usize],
             });
         }
         for i in 0..self.remote_delay() {
@@ -446,7 +444,7 @@ impl Round {
         &mut self,
         mut core: mgba::core::CoreMutRef<'_>,
         current_tick: u32,
-        tx: &[u8],
+        baked: &[u8],
     ) -> bool {
         let local_tick = current_tick + self.local_delay();
         let remote_tick = self.last_committed_remote_input().local_tick;
@@ -462,7 +460,7 @@ impl Round {
             return false;
         }
 
-        let joyflags = self.hooks.joyflags_in_tx(tx);
+        let joyflags = self.hooks.joyflags_in_baked(baked);
 
         if let Err(e) = self
             .transport
@@ -483,8 +481,7 @@ impl Round {
         self.iq.add_local_input(input::Input {
             local_tick,
             remote_tick,
-            joyflags,
-            rx: tx.to_vec(),
+            baked: baked.to_vec(),
         });
 
         if joyflags != 0 {
@@ -585,11 +582,10 @@ impl Round {
                     remote: input::Input {
                         local_tick: pair.remote.local_tick,
                         remote_tick: pair.remote.remote_tick,
-                        joyflags: pair.remote.joyflags,
-                        rx: shadow.apply_input(
+                        baked: shadow.apply_input(
                             pair.remote.local_tick,
                             pair.remote.joyflags,
-                            &pair.local.rx,
+                            &pair.local.baked,
                         )?,
                     },
                 })

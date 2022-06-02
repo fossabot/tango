@@ -2,8 +2,7 @@
 pub struct Input {
     pub local_tick: u32,
     pub remote_tick: u32,
-    pub joyflags: u16,
-    pub rx: Vec<u8>,
+    pub baked: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]

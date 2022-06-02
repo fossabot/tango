@@ -97,28 +97,18 @@ impl Replay {
             let mut p1_input = input::Input {
                 local_tick,
                 remote_tick,
-                joyflags: if let Ok(v) = zr.read_u16::<byteorder::LittleEndian>() {
-                    v
-                } else {
-                    break;
-                },
-                rx: vec![0u8; input_raw_size],
+                baked: vec![0u8; input_raw_size],
             };
-            if zr.read_exact(&mut p1_input.rx).is_err() {
+            if zr.read_exact(&mut p1_input.baked).is_err() {
                 break;
             }
 
             let mut p2_input = input::Input {
                 local_tick,
                 remote_tick: local_tick,
-                joyflags: if let Ok(v) = zr.read_u16::<byteorder::LittleEndian>() {
-                    v
-                } else {
-                    break;
-                },
-                rx: vec![0u8; input_raw_size],
+                baked: vec![0u8; input_raw_size],
             };
-            if zr.read_exact(&mut p2_input.rx).is_err() {
+            if zr.read_exact(&mut p2_input.baked).is_err() {
                 break;
             }
 
@@ -193,16 +183,8 @@ impl Writer {
             .unwrap()
             .write_u32::<byteorder::LittleEndian>(ip.local.remote_tick)?;
 
-        self.encoder
-            .as_mut()
-            .unwrap()
-            .write_u16::<byteorder::LittleEndian>(ip.local.joyflags)?;
-        self.encoder.as_mut().unwrap().write_all(&p1.rx)?;
-        self.encoder
-            .as_mut()
-            .unwrap()
-            .write_u16::<byteorder::LittleEndian>(ip.local.joyflags)?;
-        self.encoder.as_mut().unwrap().write_all(&p2.rx)?;
+        self.encoder.as_mut().unwrap().write_all(&p1.baked)?;
+        self.encoder.as_mut().unwrap().write_all(&p2.baked)?;
 
         self.num_inputs += 1;
         Ok(())

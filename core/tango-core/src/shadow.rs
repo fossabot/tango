@@ -80,6 +80,7 @@ struct InnerState {
 pub struct Shadow {
     core: mgba::core::Core,
     state: State,
+    hooks: &'static Box<dyn hooks::Hooks + Send + Sync>,
 }
 
 #[derive(Clone)]
@@ -176,7 +177,7 @@ impl Shadow {
         core.set_traps(hooks.shadow_traps(state.clone()));
         core.as_mut().reset();
 
-        Ok(Shadow { core, state })
+        Ok(Shadow { core, state, hooks })
     }
 
     pub fn advance_until_first_committed_state(&mut self) -> anyhow::Result<mgba::state::State> {
@@ -229,7 +230,7 @@ impl Shadow {
         joyflags: u16,
         rx: &[u8],
     ) -> anyhow::Result<Vec<u8>> {
-        let output = {
+        {
             let mut round_state = self.state.lock_round_state();
             let round = round_state.round.as_mut().expect("round");
 
@@ -258,8 +259,7 @@ impl Shadow {
                     rx: output.tx.to_vec(),
                 },
             });
-            output
-        };
+        }
 
         loop {
             self.core.as_mut().run_loop();
@@ -277,7 +277,7 @@ impl Shadow {
             };
 
             self.core.as_mut().load_state(&state)?;
-            if round.output.is_some() {
+            if let Some(output) = &round.output {
                 return Ok(output.tx.clone());
             }
         }

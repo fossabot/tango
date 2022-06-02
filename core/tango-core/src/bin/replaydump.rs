@@ -247,10 +247,6 @@ fn dump_text(_args: TextCli, replay: tango_core::replay::Replay) -> Result<(), a
             "tick = {:08x?}, l = {:02x?}, r = {:02x?}",
             ip.local.local_tick, ip.local.rx, ip.remote.rx,
         );
-        // println!(
-        //     "tick = {:08x?}, l = {:02x} {:02x?}, r = {:02x} {:02x?}",
-        //     ip.local.local_tick, ip.local.joyflags, ip.local.rx, ip.remote.joyflags, ip.remote.rx,
-        // );
     }
     Ok(())
 }

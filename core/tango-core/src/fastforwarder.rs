@@ -195,31 +195,33 @@ impl Fastforwarder {
             .iter()
             .cloned()
             .chain(local_inputs.iter().cloned().map(|local| {
+                let last_joyflags = self
+                    .hooks
+                    .joyflags_in_baked(&last_committed_remote_input.baked);
+
                 let mut predicted_joyflags = 0;
-                if last_committed_remote_input.joyflags & mgba::input::keys::A as u16 != 0 {
+                if last_joyflags & mgba::input::keys::A as u16 != 0 {
                     predicted_joyflags |= mgba::input::keys::A as u16;
                 }
-                if last_committed_remote_input.joyflags & mgba::input::keys::B as u16 != 0 {
+                if last_joyflags & mgba::input::keys::B as u16 != 0 {
                     predicted_joyflags |= mgba::input::keys::B as u16;
                 }
 
                 // TODO: Double check if this is correct.
-                let mut predicted_rx = last_committed_remote_input.rx.clone();
+                let mut predicted_baked = last_committed_remote_input.baked.clone();
                 self.hooks
-                    .set_joyflags_in_rx(&mut predicted_rx, predicted_joyflags);
+                    .set_joyflags_in_baked(&mut predicted_baked, predicted_joyflags);
 
                 input::Pair {
                     local: input::Input {
                         local_tick: local.local_tick,
                         remote_tick: local.remote_tick,
-                        joyflags: local.joyflags,
-                        rx: vec![0; self.hooks.raw_input_size() as usize], // TODO: Not this
+                        baked: vec![0; self.hooks.raw_input_size() as usize], // TODO: Not this
                     },
                     remote: input::Input {
                         local_tick: local.local_tick,
                         remote_tick: local.remote_tick,
-                        joyflags: predicted_joyflags,
-                        rx: predicted_rx,
+                        baked: predicted_baked,
                     },
                 }
             }))

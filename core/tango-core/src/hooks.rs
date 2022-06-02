@@ -36,9 +36,9 @@ pub trait Hooks {
 
     fn raw_input_size(&'static self) -> u8;
 
-    fn set_joyflags_in_rx(&'static self, rx: &mut [u8], joyflags: u16);
+    fn set_joyflags_in_baked(&'static self, baked: &mut [u8], joyflags: u16);
 
-    fn joyflags_in_tx(&'static self, tx: &[u8]) -> u16;
+    fn joyflags_in_baked(&'static self, baked: &[u8]) -> u16;
 
     fn current_tick(&'static self, core: mgba::core::CoreMutRef) -> u32;
 }

@@ -631,14 +631,6 @@ impl hooks::Hooks for BN6 {
                             return;
                         };
 
-                        if ip.remote.joyflags != 0 {
-                            log::info!(
-                                "SHADOW DEBUG: pressed {:02x} on {:08x}",
-                                ip.remote.joyflags,
-                                current_tick
-                            );
-                        }
-
                         if ip.local.tick != current_tick {
                             shadow_state.set_error(anyhow::anyhow!(
                                 "shadow read joyflags: ip tick != in battle tick: {} != {}",
@@ -769,7 +761,7 @@ impl hooks::Hooks for BN6 {
 
                         core.gba_mut()
                             .cpu_mut()
-                            .set_gpr(4, ip.local.joyflags as i32 | 0xfc00);
+                            .set_gpr(4, self.joyflags_in_baked(&ip.local.baked) as i32 | 0xfc00);
                     }),
                 )
             },
@@ -860,13 +852,13 @@ impl hooks::Hooks for BN6 {
                         munger.set_rx_packet(
                             core,
                             ff_state.local_player_index() as u32,
-                            &ip.local.rx.try_into().unwrap(),
+                            &ip.local.baked.try_into().unwrap(),
                         );
 
                         munger.set_rx_packet(
                             core,
                             ff_state.remote_player_index() as u32,
-                            &ip.remote.rx.try_into().unwrap(),
+                            &ip.remote.baked.try_into().unwrap(),
                         );
                     }),
                 )
@@ -898,12 +890,12 @@ impl hooks::Hooks for BN6 {
         0x10
     }
 
-    fn set_joyflags_in_rx(&self, rx: &mut [u8], joyflags: u16) {
-        byteorder::LittleEndian::write_u16(&mut rx[0x2..0x4], joyflags | 0xfc00);
+    fn set_joyflags_in_baked(&self, baked: &mut [u8], joyflags: u16) {
+        byteorder::LittleEndian::write_u16(&mut baked[0x2..0x4], joyflags | 0xfc00);
     }
 
-    fn joyflags_in_tx(&self, tx: &[u8]) -> u16 {
-        byteorder::LittleEndian::read_u16(&tx[0x2..0x4]) & !0xfc00
+    fn joyflags_in_baked(&self, baked: &[u8]) -> u16 {
+        byteorder::LittleEndian::read_u16(&baked[0x2..0x4]) & !0xfc00
     }
 
     fn replace_opponent_name(&self, mut core: mgba::core::CoreMutRef, name: &str) {
