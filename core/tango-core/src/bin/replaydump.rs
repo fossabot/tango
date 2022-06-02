@@ -245,7 +245,7 @@ fn dump_text(_args: TextCli, replay: tango_core::replay::Replay) -> Result<(), a
     for ip in &replay.input_pairs {
         println!(
             "tick = {:08x?}, l = {:02x?}, r = {:02x?}",
-            ip.local.local_tick, ip.local.rx, ip.remote.rx,
+            ip.local.local_tick, ip.local.baked, ip.remote.baked,
         );
     }
     Ok(())
