@@ -449,9 +449,7 @@ impl Round {
         tx: &[u8],
     ) -> bool {
         let local_tick = current_tick + self.local_delay();
-        let remote_tick = self.last_committed_remote_input().local_tick + 1;
-
-        log::info!("DEBUG: adding tx for tick: {}", local_tick);
+        let remote_tick = self.last_committed_remote_input().local_tick;
 
         // We do it in this order such that:
         // 1. We make sure that the input buffer does not overflow if we were to add an input.
@@ -488,6 +486,14 @@ impl Round {
             joyflags,
             rx: tx.to_vec(),
         });
+
+        if joyflags != 0 {
+            log::info!(
+                "PRIMARY DEBUG: pressed {:02x} on {:08x}",
+                joyflags,
+                local_tick
+            );
+        }
 
         let (commit_pairs, local_inputs) = match self.consume_and_peek_local().await {
             Ok(r) => r,
@@ -574,8 +580,6 @@ impl Round {
         let input_pairs = partial_input_pairs
             .into_iter()
             .map(|pair| {
-                log::info!("DEBUG: applying shadow for input: {:?}", pair);
-
                 Ok(input::Pair {
                     local: pair.local.clone(),
                     remote: input::Input {
@@ -597,12 +601,12 @@ impl Round {
         }
 
         for ip in &input_pairs {
-            log::info!(
-                "DEBUG: {}:\n{:02x?}\n{:02x?}",
-                ip.local.local_tick,
-                ip.local.rx,
-                ip.remote.rx
-            );
+            // log::info!(
+            //     "DEBUG: {}:\n{:02x?}\n{:02x?}",
+            //     ip.local.local_tick,
+            //     ip.local.rx,
+            //     ip.remote.rx
+            // );
 
             self.replay_writer
                 .as_mut()

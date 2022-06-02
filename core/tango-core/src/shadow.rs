@@ -1,7 +1,13 @@
 use crate::{hooks, input};
 
 #[derive(Clone)]
-pub struct Input {
+pub struct LocalInput {
+    pub tick: u32,
+    pub rx: Vec<u8>,
+}
+
+#[derive(Clone)]
+pub struct RemoteInput {
     pub tick: u32,
     pub joyflags: u16,
     pub rx: Vec<u8>,
@@ -16,7 +22,7 @@ pub struct Round {
     local_player_index: u8,
     is_accepting_input: bool,
     committed_state: Option<mgba::state::State>,
-    input: Option<input::Pair<Input, Input>>,
+    input: Option<input::Pair<LocalInput, RemoteInput>>,
     output: Option<Output>,
 }
 
@@ -41,11 +47,11 @@ impl Round {
         self.committed_state = Some(state);
     }
 
-    pub fn take_input(&mut self) -> Option<input::Pair<Input, Input>> {
+    pub fn take_input(&mut self) -> Option<input::Pair<LocalInput, RemoteInput>> {
         self.input.take()
     }
 
-    pub fn peek_input(&self) -> &Option<input::Pair<Input, Input>> {
+    pub fn peek_input(&self) -> &Option<input::Pair<LocalInput, RemoteInput>> {
         &self.input
     }
 
@@ -217,7 +223,12 @@ impl Shadow {
         }
     }
 
-    pub fn apply_input(&mut self, tick: u32, joyflags: u16, rx: &[u8]) -> anyhow::Result<Vec<u8>> {
+    pub fn apply_input(
+        &mut self,
+        current_tick: u32,
+        joyflags: u16,
+        rx: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
         let output = {
             let mut round_state = self.state.lock_round_state();
             let round = round_state.round.as_mut().expect("round");
@@ -228,16 +239,23 @@ impl Shadow {
                 anyhow::bail!("no output in shadow to take")
             };
 
+            if output.tick != current_tick {
+                anyhow::bail!(
+                    "shadow apply input: output tick != in battle tick: {} != {}",
+                    output.tick,
+                    current_tick,
+                );
+            }
+
             round.input = Some(input::Pair {
-                local: Input {
-                    tick,
-                    joyflags,
+                local: LocalInput {
+                    tick: current_tick,
                     rx: rx.to_vec(),
                 },
-                remote: Input {
-                    tick,
+                remote: RemoteInput {
+                    tick: current_tick,
                     joyflags,
-                    rx: rx.to_vec(),
+                    rx: output.tx.to_vec(),
                 },
             });
             output

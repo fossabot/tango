@@ -625,16 +625,24 @@ impl hooks::Hooks for BN6 {
                             }
                         };
 
-                        let input = if let Some(input) = round.peek_input() {
-                            input
+                        let ip = if let Some(ip) = round.peek_input() {
+                            ip
                         } else {
                             return;
                         };
 
-                        if input.local.tick != current_tick {
+                        if ip.remote.joyflags != 0 {
+                            log::info!(
+                                "SHADOW DEBUG: pressed {:02x} on {:08x}",
+                                ip.remote.joyflags,
+                                current_tick
+                            );
+                        }
+
+                        if ip.local.tick != current_tick {
                             shadow_state.set_error(anyhow::anyhow!(
-                                "shadow read joyflags: input tick != in battle tick: {} != {}",
-                                input.local.tick,
+                                "shadow read joyflags: ip tick != in battle tick: {} != {}",
+                                ip.local.tick,
                                 current_tick,
                             ));
                             return;
@@ -642,7 +650,7 @@ impl hooks::Hooks for BN6 {
 
                         core.gba_mut()
                             .cpu_mut()
-                            .set_gpr(4, input.local.joyflags as i32 | 0xfc00);
+                            .set_gpr(4, ip.remote.joyflags as i32 | 0xfc00);
                     }),
                 )
             },
@@ -707,11 +715,10 @@ impl hooks::Hooks for BN6 {
                         let round = round_state.round.as_mut().expect("round");
 
                         let current_tick = munger.current_tick(core);
-                        log::info!("DEBUG: shadow current tick: {}", current_tick);
 
                         round.set_committed_state(core.save_state().expect("save state"));
                         round.set_output(shadow::Output {
-                            tick: current_tick,
+                            tick: current_tick + 1,
                             tx: munger.tx_packet(core).to_vec(),
                         });
                     }),
