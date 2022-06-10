@@ -707,24 +707,6 @@ impl hooks::Hooks for BN4 {
                     }),
                 )
             },
-            {
-                let shadow_state = shadow_state.clone();
-                (
-                    self.offsets.rom.round_call_jump_table_ret,
-                    Box::new(move |_core| {
-                        let mut round_state = shadow_state.lock_round_state();
-                        let round = if let Some(round) = round_state.round.as_mut() {
-                            round
-                        } else {
-                            return;
-                        };
-                        if !round.has_first_committed_state() {
-                            return;
-                        }
-                        round.increment_current_tick();
-                    }),
-                )
-            },
         ]
     }
 

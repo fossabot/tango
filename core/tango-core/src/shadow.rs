@@ -14,10 +14,6 @@ impl Round {
         self.current_tick
     }
 
-    pub fn increment_current_tick(&mut self) {
-        self.current_tick += 1;
-    }
-
     pub fn local_player_index(&self) -> u8 {
         self.local_player_index
     }
@@ -191,20 +187,27 @@ impl Shadow {
     pub fn advance_until_first_committed_state(&mut self) -> anyhow::Result<mgba::state::State> {
         log::info!("advancing shadow until first committed state");
         loop {
-            self.core.as_mut().run_loop();
+            self.core.as_mut().run_frame();
             if let Some(err) = self.state.0.error.lock().take() {
                 return Err(anyhow::format_err!("shadow: {}", err));
             }
 
-            let round_state = self.state.lock_round_state();
-            if let Some(state) = round_state
-                .round
-                .as_ref()
-                .and_then(|round| round.first_committed_state.as_ref())
-            {
-                self.core.as_mut().load_state(state).expect("load state");
-                return Ok(state.clone());
-            }
+            let mut round_state = self.state.lock_round_state();
+            let round = if let Some(round) = round_state.round.as_mut() {
+                round
+            } else {
+                continue;
+            };
+
+            let state = if let Some(state) = round.first_committed_state.as_ref() {
+                state.clone()
+            } else {
+                continue;
+            };
+
+            round.current_tick = 0;
+            self.core.as_mut().load_state(&state).expect("load state");
+            return Ok(state);
         }
     }
 
@@ -212,7 +215,7 @@ impl Shadow {
         log::info!("advancing shadow until round end");
         self.hooks.prepare_for_fastforward(self.core.as_mut());
         loop {
-            self.core.as_mut().run_loop();
+            self.core.as_mut().run_frame();
             if let Some(err) = self.state.0.error.lock().take() {
                 return Err(anyhow::format_err!("shadow: {}", err));
             }
@@ -240,14 +243,15 @@ impl Shadow {
         &mut self,
         input: input::Pair<input::Input, input::PartialInput>,
     ) -> anyhow::Result<input::Pair<input::Input, input::Input>> {
-        {
+        let current_tick = {
             let mut round_state = self.state.lock_round_state();
             let round = round_state.round.as_mut().expect("round");
             round.pending_in_input = Some(input);
-        }
+            round.current_tick
+        };
         self.hooks.prepare_for_fastforward(self.core.as_mut());
         loop {
-            self.core.as_mut().run_loop();
+            self.core.as_mut().run_frame();
             if let Some(err) = self.state.0.error.lock().take() {
                 return Err(anyhow::format_err!("shadow: {}", err));
             }
@@ -258,6 +262,7 @@ impl Shadow {
                     .expect("load state");
                 let mut round_state = self.state.lock_round_state();
                 let round = round_state.round.as_mut().expect("round");
+                round.current_tick = current_tick + 1;
                 return Ok(round.pending_out_input.take().expect("pending out input"));
             }
         }

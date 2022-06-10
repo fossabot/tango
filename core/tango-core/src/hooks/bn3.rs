@@ -386,7 +386,7 @@ impl hooks::Hooks for BN3 {
                 let facade = facade.clone();
                 (
                     self.offsets.rom.handle_input_post_call,
-                    Box::new(move |_| {
+                    Box::new(move |mut core| {
                         handle.block_on(async {
                             let match_ = match facade.match_().await {
                                 Some(match_) => match_,
@@ -405,14 +405,50 @@ impl hooks::Hooks for BN3 {
                             };
 
                             if !round.has_committed_state() {
+                                log::info!("no committed state");
                                 return;
                             }
 
                             round.increment_current_tick();
+                            log::info!(
+                                "0x0800643e @ {}: incremented tick: {}, IE = {:08x}",
+                                core.as_ref().gba().timing().current_time(),
+                                round.current_tick(),
+                                core.raw_read_32(0x04000200, -1)
+                            );
                         });
                     }),
                 )
             },
+            (
+                0x0803e976,
+                Box::new(|mut core| {
+                    log::info!("SKIP SIOINIT");
+                    let pc = core.as_ref().gba().cpu().thumb_pc();
+                    core.gba_mut().cpu_mut().set_thumb_pc(pc + 4);
+                    core.gba_mut().cpu_mut().set_gpr(0, 3);
+                }),
+            ),
+            (
+                0x08006440,
+                Box::new(|core| {
+                    log::info!(
+                        "0x08006440 ({:08x}) @ {}: poststepping",
+                        core.as_ref().gba().cpu().gpr(15),
+                        core.as_ref().gba().timing().current_time(),
+                    );
+                }),
+            ),
+            (
+                0x0800643a,
+                Box::new(|core| {
+                    log::info!(
+                        "0x0800643a ({:08x}) @ {}: prestepping",
+                        core.as_ref().gba().cpu().gpr(15),
+                        core.as_ref().gba().timing().current_time(),
+                    );
+                }),
+            ),
         ]
     }
 
@@ -672,27 +708,15 @@ impl hooks::Hooks for BN3 {
                     }),
                 )
             },
-            {
-                let shadow_state = shadow_state.clone();
-                (
-                    self.offsets.rom.handle_input_post_call,
-                    Box::new(move |_| {
-                        let mut round_state = shadow_state.lock_round_state();
-                        let round = match round_state.round.as_mut() {
-                            Some(round) => round,
-                            None => {
-                                return;
-                            }
-                        };
-
-                        if !round.has_first_committed_state() {
-                            return;
-                        }
-
-                        round.increment_current_tick();
-                    }),
-                )
-            },
+            (
+                0x0803e976,
+                Box::new(|mut core| {
+                    log::info!("SKIP SIOINIT");
+                    let pc = core.as_ref().gba().cpu().thumb_pc();
+                    core.gba_mut().cpu_mut().set_thumb_pc(pc + 4);
+                    core.gba_mut().cpu_mut().set_gpr(0, 3);
+                }),
+            ),
         ]
     }
 
@@ -843,6 +867,15 @@ impl hooks::Hooks for BN3 {
             (
                 self.offsets.rom.handle_input_deinit_send_and_receive_call,
                 make_send_and_receive_call_hook(),
+            ),
+            (
+                0x0803e976,
+                Box::new(|mut core| {
+                    log::info!("SKIP SIOINIT");
+                    let pc = core.as_ref().gba().cpu().thumb_pc();
+                    core.gba_mut().cpu_mut().set_thumb_pc(pc + 4);
+                    core.gba_mut().cpu_mut().set_gpr(0, 3);
+                }),
             ),
             {
                 (

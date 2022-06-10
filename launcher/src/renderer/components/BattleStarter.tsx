@@ -71,7 +71,7 @@ const MATCH_TYPES = ["single", "triple"];
 function defaultMatchSettings(nickname: string): SetSettings {
   return {
     nickname,
-    inputDelay: 2,
+    inputDelay: 0,
     matchType: 1,
     gameInfo: undefined,
     availableGames: [],

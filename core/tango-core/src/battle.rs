@@ -621,6 +621,12 @@ impl Round {
         }
 
         for ip in &input_pairs {
+            // log::info!(
+            //     "t = {}\n    {:02x?}\n    {:02x?}",
+            //     self.current_tick,
+            //     ip.local.rx,
+            //     ip.remote.rx
+            // );
             self.replay_writer
                 .as_mut()
                 .unwrap()

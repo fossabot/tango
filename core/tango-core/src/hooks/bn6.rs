@@ -791,10 +791,9 @@ impl hooks::Hooks for BN6 {
                         if !round.has_first_committed_state() {
                             return;
                         }
-                        round.increment_current_tick();
 
                         let game_current_tick = munger.current_tick(core);
-                        if game_current_tick != round.current_tick() {
+                        if game_current_tick + 1 != round.current_tick() {
                             shadow_state.set_anyhow_error(anyhow::anyhow!(
                                 "post increment tick: round tick = {} but game tick = {}",
                                 round.current_tick(),
