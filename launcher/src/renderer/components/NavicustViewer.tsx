@@ -87,6 +87,20 @@ const commandLine = 3;
 const borderColor = "#29314a";
 const emptyColor = "#105284";
 
+function navicustBackground(gameFamily: string, version: string) {
+  switch (gameFamily) {
+    case "exe6":
+    case "bn6":
+      switch (version) {
+        case "falzar":
+          return "#E78C39";
+        case "gregar":
+          return "#08BD73";
+      }
+  }
+  return undefined;
+}
+
 function NavicustGrid({
   ncps,
   placements,
@@ -137,12 +151,7 @@ function NavicustGrid({
         padding: "20px",
         background:
           gameVersion != null
-            ? ({
-                bn6: {
-                  falzar: "#E78C39",
-                  gregar: "#08BD73",
-                },
-              }[gameFamily] ?? ({} as { [key: string]: string }))[gameVersion]
+            ? navicustBackground(gameFamily, gameVersion)
             : undefined,
         display: "inline-block",
         borderRadius: "4px",

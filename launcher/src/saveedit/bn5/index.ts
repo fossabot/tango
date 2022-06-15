@@ -84,9 +84,10 @@ export class Editor {
   }
 
   getGameFamily() {
-    return "bn5";
+    return this.getGameInfo().region == "JP" ? "exe5" : "bn5";
   }
-  static sniffROMNames(buffer: ArrayBuffer) {
+
+  static sniff(buffer: ArrayBuffer) {
     if (buffer.byteLength != SRAM_SIZE) {
       throw (
         "invalid byte length of save file: expected " +

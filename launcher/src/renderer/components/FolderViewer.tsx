@@ -23,6 +23,10 @@ const GIGA_BG = {
   light: "#f7cee7",
 };
 
+function gameFamilyToFolder(gameFamily: string) {
+  return gameFamily == "exe6" ? "bn6" : gameFamily;
+}
+
 function FolderChipRow({
   groupedChip,
   gameFamily,
@@ -67,7 +71,9 @@ function FolderChipRow({
           width="28"
           src={(() => {
             try {
-              return require(`../../../static/images/games/${gameFamily}/chipicons/${id}.png`);
+              return require(`../../../static/images/games/${gameFamilyToFolder(
+                gameFamily
+              )}/chipicons/${id}.png`);
             } catch (e) {
               return "";
             }
@@ -120,9 +126,9 @@ function FolderChipRow({
         <img
           height="28"
           width="28"
-          src={require(`../../../static/images/games/${gameFamily}/elements/${
-            chipInfo.element ?? "null"
-          }.png`)}
+          src={require(`../../../static/images/games/${gameFamilyToFolder(
+            gameFamily
+          )}/elements/${chipInfo.element ?? "null"}.png`)}
           style={{ imageRendering: "pixelated" }}
         />
       </TableCell>
