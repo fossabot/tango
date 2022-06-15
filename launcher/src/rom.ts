@@ -4,7 +4,10 @@ import mkdirp from "mkdirp";
 import path from "path";
 
 export const KNOWN_ROMS = require("./roms.json5").default as {
-  [name: string]: KnownROM;
+  [family: string]: {
+    title: { [language: string]: string };
+    versions: { [name: string]: KnownROM };
+  };
 };
 
 export interface ROMInfo {
@@ -22,7 +25,6 @@ export function getROMInfo(buffer: ArrayBuffer) {
 export interface KnownROM {
   title: { [language: string]: string };
   revisions: { [key: string]: { crc32: number } };
-  gameFamily: string;
   netplayCompatibility: string;
 }
 
