@@ -62,8 +62,6 @@ export interface EditorClass {
 
 export interface Editor {
   getROMName(): string;
-  getGameFamily(): string;
-  getGameInfo(): GameInfo;
   getFolderEditor(): FolderEditor | null;
   getNavicustEditor(): NavicustEditor | null;
   getModcardsEditor(): ModcardsEditor | null;

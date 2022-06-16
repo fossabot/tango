@@ -378,10 +378,6 @@ export class Editor {
     return this.romName;
   }
 
-  getGameFamily() {
-    return this.getGameInfo().region == "JP" ? "exe6" : "bn6";
-  }
-
   getRawBufferForSave() {
     if (this.getChecksum() != this.computeChecksum()) {
       throw "checksum does not match";

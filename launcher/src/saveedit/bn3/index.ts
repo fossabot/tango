@@ -76,10 +76,6 @@ export class Editor {
     return this.romName;
   }
 
-  getGameFamily() {
-    return this.getGameInfo().region == "JP" ? "exe3" : "bn3";
-  }
-
   static sniff(buffer: ArrayBuffer) {
     if (buffer.byteLength != SRAM_SIZE) {
       throw (

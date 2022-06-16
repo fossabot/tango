@@ -10,6 +10,16 @@ export const KNOWN_ROMS = require("./roms.json5").default as {
   };
 };
 
+export const FAMILY_BY_ROM_NAME = (() => {
+  const FAMILY_BY_ROM_NAME: { [romName: string]: string } = {};
+  for (const family of Object.keys(KNOWN_ROMS)) {
+    for (const version of Object.keys(KNOWN_ROMS[family].versions)) {
+      FAMILY_BY_ROM_NAME[version] = family;
+    }
+  }
+  return FAMILY_BY_ROM_NAME;
+})();
+
 export interface ROMInfo {
   name: string;
   crc32: number;

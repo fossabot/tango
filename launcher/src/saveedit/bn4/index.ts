@@ -284,10 +284,6 @@ export class Editor {
     return GAME_INFOS[this.romName];
   }
 
-  getGameFamily() {
-    return this.getGameInfo().region == "JP" ? "exe4" : "bn4";
-  }
-
   getChecksum() {
     return getChecksum(this.dv);
   }
