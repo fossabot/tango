@@ -103,12 +103,30 @@ export interface ModcardsEditor {
   getModcard(i: number): { id: number; enabled: boolean } | null;
 }
 
-export const EDITORS: { [key: string]: EditorClass } = {
+const EDITORS: { [key: string]: EditorClass } = {
   bn3: bn3.Editor,
   bn4: bn4.Editor,
   bn5: bn5.Editor,
   bn6: bn6.Editor,
 };
+
+export function editorClassForGameFamily(family: string): EditorClass {
+  switch (family) {
+    case "bn3":
+    case "exe3":
+      return bn3.Editor;
+    case "bn4":
+    case "exe4":
+      return bn4.Editor;
+    case "bn5":
+    case "exe5":
+      return bn5.Editor;
+    case "bn6":
+    case "exe6":
+      return bn6.Editor;
+  }
+  throw `no editor class found: ${family}`;
+}
 
 export function sniff(buffer: ArrayBuffer): string[] {
   const errors: { [key: string]: any } = {};
