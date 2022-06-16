@@ -44,7 +44,7 @@ function ReadyAppBody() {
           setSelected(v);
         }}
       />
-      {/* <PlayPane active={selected == "play"} /> */}
+      <PlayPane active={selected == "play"} />
       <ReplaysPane active={selected == "replays"} />
       <PatchesPane active={selected == "patches"} />
       <SettingsPane active={selected == "settings"} />

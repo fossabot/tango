@@ -26,8 +26,8 @@ import Typography from "@mui/material/Typography";
 
 import { getBasePath, getSavesPath } from "../../../paths";
 import { SetSettings } from "../../../protos/generated/lobby";
-import { KNOWN_ROMS } from "../../../rom";
-import { Editor, EDITORS_BY_GAME_FAMILY } from "../../../saveedit";
+import { FAMILY_BY_ROM_NAME, KNOWN_ROM_FAMILIES } from "../../../rom";
+import { Editor, editorClassForGameFamily } from "../../../saveedit";
 import { fallbackLng } from "../../i18n";
 import BattleStarter, { useGetNetplayCompatibility } from "../BattleStarter";
 import { usePatches } from "../PatchesContext";
@@ -48,7 +48,7 @@ function SaveViewerWrapper({
 
   React.useEffect(() => {
     (async () => {
-      const Editor = EDITORS_BY_GAME_FAMILY[KNOWN_ROMS[romName]!.gameFamily]!;
+      const Editor = editorClassForGameFamily(FAMILY_BY_ROM_NAME[romName]);
       setEditor(
         new Editor(
           Editor.sramDumpToRaw(
