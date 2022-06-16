@@ -256,7 +256,7 @@ export default function SavesPane({ active }: { active: boolean }) {
                       {selection.saveName}{" "}
                       <small>
                         <Trans
-                          i18nKey="rom-name"
+                          i18nKey="play:rom-name"
                           values={{
                             familyName:
                               KNOWN_ROM_FAMILIES[

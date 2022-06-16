@@ -22,25 +22,34 @@ export const FAMILY_BY_ROM_NAME = (() => {
 
 export interface ROMInfo {
   name: string;
+  revision: number;
   crc32: number;
 }
 
 const decoder = new TextDecoder("ascii");
 
 export function getROMInfo(buffer: ArrayBuffer) {
+  const dv = new DataView(buffer);
   const name = decoder.decode(new Uint8Array(buffer, 0x000000a0, 16));
-  return { name, crc32: crc32.buf(new Uint8Array(buffer)) >>> 0 };
+  return {
+    name,
+    revision: dv.getUint8(0x000000bc),
+    crc32: crc32.buf(new Uint8Array(buffer)) >>> 0,
+  };
 }
 
 export interface KnownROM {
   title: { [language: string]: string };
-  revisions: { [key: string]: { crc32: number } };
+  revisions: { [key: number]: { crc32: number } };
   netplayCompatibility: string;
 }
 
 export async function scan(dir: string) {
   const games = {} as {
-    [name: string]: string;
+    [name: string]: {
+      filename: string;
+      revision: number;
+    };
   };
 
   let filenames: string[];
@@ -74,17 +83,20 @@ export async function scan(dir: string) {
         const family = KNOWN_ROM_FAMILIES[familyName];
         const rom = family.versions[romInfo.name];
 
-        const crc32s = Object.values(rom.revisions).map(
-          (revision) => revision.crc32
-        );
-
-        if (crc32s.indexOf(romInfo.crc32) == -1) {
-          throw `mismatched crc32: expected one of ${crc32s
-            .map((crc32) => crc32.toString(16).padStart(8, "0"))
-            .join(", ")}, got ${romInfo.crc32.toString(16).padStart(8, "0")}`;
+        if (romInfo.crc32 != rom.revisions[romInfo.revision].crc32) {
+          throw `mismatched crc32: expected ${rom.revisions[
+            romInfo.revision
+          ].crc32
+            .toString(16)
+            .padStart(8, "0")}, got ${romInfo.crc32
+            .toString(16)
+            .padStart(8, "0")}`;
         }
 
-        games[romInfo.name] = filename;
+        games[romInfo.name] = {
+          filename,
+          revision: romInfo.revision,
+        };
       } catch (e) {
         throw `failed to scan rom ${filename}: ${e}`;
       }

@@ -99,7 +99,7 @@ function useGetPatchName() {
   );
 }
 
-function useGetGameTitle() {
+function useGetGameFamilyTitle() {
   const getPatchName = useGetPatchName();
   const { i18n } = useTranslation();
 
@@ -248,7 +248,10 @@ async function runCallback(
     coreRef: React.MutableRefObject<ipc.Core | null>;
     availableGames: SetSettings["availableGames"];
     getGameTitle: (gameInfo: GameInfo) => string;
-    getPatchPath: (path: { name: string; version: string }) => string;
+    getPatchPath: (
+      rom: string,
+      patch: { name: string; version: string }
+    ) => string;
     getROMPath: (romName: string) => string;
     onOpponentSettingsChange: (settings: SetSettings | null) => void;
     pendingStates: PendingStates | null;
@@ -395,7 +398,10 @@ async function runCallback(
     await makeROM(
       ref.current.getROMPath(ref.current.gameInfo!.rom),
       ref.current.gameInfo!.patch != null
-        ? ref.current.getPatchPath(ref.current.gameInfo!.patch)
+        ? ref.current.getPatchPath(
+            ref.current.gameInfo!.rom,
+            ref.current.gameInfo!.patch
+          )
         : null,
       outROMPath
     );
@@ -611,7 +617,7 @@ async function runCallback(
     await makeROM(
       ref.current.getROMPath(ownGameInfo.rom),
       ownGameInfo.patch != null
-        ? ref.current.getPatchPath(ownGameInfo.patch)
+        ? ref.current.getPatchPath(ownGameInfo.rom, ownGameInfo.patch)
         : null,
       outOwnROMPath
     );
@@ -630,7 +636,7 @@ async function runCallback(
     await makeROM(
       ref.current.getROMPath(opponentGameInfo.rom),
       opponentGameInfo.patch != null
-        ? ref.current.getPatchPath(opponentGameInfo.patch)
+        ? ref.current.getPatchPath(opponentGameInfo.rom, opponentGameInfo.patch)
         : null,
       outOpponentROMPath
     );
@@ -813,7 +819,7 @@ export default function BattleStarter({
   const previousGameInfo = usePrevious(gameInfo);
   const previousAvailableGames = usePrevious(availableGames);
 
-  const getGameTitle = useGetGameTitle();
+  const getGameTitle = useGetGameFamilyTitle();
 
   const changeLocalPendingState = React.useCallback((settings: SetSettings) => {
     setPendingStates((pendingStates) => ({
@@ -847,6 +853,15 @@ export default function BattleStarter({
     if (
       isEqual(gameInfo, previousGameInfo) &&
       isEqual(availableGames, previousAvailableGames)
+    ) {
+      return;
+    }
+
+    if (
+      gameInfo != null &&
+      previousGameInfo != null &&
+      FAMILY_BY_ROM_NAME[gameInfo.rom] ==
+        FAMILY_BY_ROM_NAME[previousGameInfo.rom]
     ) {
       return;
     }
