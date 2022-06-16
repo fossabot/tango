@@ -54,8 +54,8 @@ import {
 import { GameInfo, Message, NegotiatedState, SetSettings } from "../../protos/generated/lobby";
 import { ReplayMetadata } from "../../protos/generated/replay";
 import randomCode from "../../randomcode";
-import { KNOWN_ROMS } from "../../rom";
-import { Editor, EDITORS_BY_GAME_FAMILY } from "../../saveedit";
+import { FAMILY_BY_ROM_NAME, KNOWN_ROM_FAMILIES } from "../../rom";
+import { Editor, editorClassForGameFamily } from "../../saveedit";
 import { useGetPatchPath, useGetROMPath } from "../hooks";
 import { fallbackLng } from "../i18n";
 import { useConfig } from "./ConfigContext";
@@ -106,8 +106,10 @@ function useGetGameTitle() {
   return React.useCallback(
     (gameInfo: GameInfo) =>
       `${
-        KNOWN_ROMS[gameInfo.rom].title[i18n.resolvedLanguage] ||
-        KNOWN_ROMS[gameInfo.rom].title[fallbackLng]
+        KNOWN_ROM_FAMILIES[FAMILY_BY_ROM_NAME[gameInfo.rom]].title[
+          i18n.resolvedLanguage
+        ] ||
+        KNOWN_ROM_FAMILIES[FAMILY_BY_ROM_NAME[gameInfo.rom]].title[fallbackLng]
       }${gameInfo.patch != null ? ` + ${getPatchName(gameInfo.patch)}` : ""}`,
     [i18n, getPatchName]
   );
@@ -137,7 +139,7 @@ export function useGetNetplayCompatibility() {
   const { patches } = usePatches();
   return React.useCallback(
     (gameInfo: GameInfo) => {
-      let netplayCompatibility = KNOWN_ROMS[gameInfo.rom].netplayCompatibility;
+      let netplayCompatibility = FAMILY_BY_ROM_NAME[gameInfo.rom];
       if (gameInfo.patch != null) {
         if (
           !Object.prototype.hasOwnProperty.call(patches, gameInfo.patch.name) ||
@@ -194,14 +196,13 @@ function useAvailableGames() {
 
         for (const patchName of Object.keys(patches)) {
           const patch = patches[patchName];
-          if (!Object.prototype.hasOwnProperty.call(roms, patch.forROM)) {
-            continue;
-          }
           for (const version of Object.keys(patch.versions)) {
-            yield {
-              rom: patch.forROM,
-              patch: { name: patchName, version },
-            };
+            for (const r of patch.versions[version].forROMs) {
+              yield {
+                rom: r.name,
+                patch: { name: patchName, version },
+              };
+            }
           }
         }
       })()
@@ -647,8 +648,9 @@ async function runCallback(
     await writeFile(shadowSavePath, remoteState.saveData);
 
     if (opponentGameSettings.revealSetup) {
-      const Editor =
-        EDITORS_BY_GAME_FAMILY[KNOWN_ROMS[opponentGameInfo.rom]!.gameFamily]!;
+      const Editor = editorClassForGameFamily(
+        FAMILY_BY_ROM_NAME[opponentGameInfo.rom]
+      );
       ref.current.setRevealedSetupEditor(
         new Editor(
           Editor.sramDumpToRaw(new Uint8Array(remoteState.saveData).buffer),
