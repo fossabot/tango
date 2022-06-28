@@ -150,134 +150,6 @@ impl hooks::Hooks for BN6 {
             },
             {
                 let facade = facade.clone();
-                let handle = handle.clone();
-                (
-                    self.offsets.rom.round_end_set_win,
-                    Box::new(move |_| {
-                        handle.block_on(async {
-                            let match_ = match facade.match_().await {
-                                Some(match_) => match_,
-                                None => {
-                                    return;
-                                }
-                            };
-
-                            let mut round_state = match_.lock_round_state().await;
-                            round_state.set_last_result(battle::BattleResult::Win);
-                        });
-                    }),
-                )
-            },
-            {
-                let facade = facade.clone();
-                let handle = handle.clone();
-                (
-                    self.offsets.rom.round_end_set_loss,
-                    Box::new(move |_| {
-                        handle.block_on(async {
-                            let match_ = match facade.match_().await {
-                                Some(match_) => match_,
-                                None => {
-                                    return;
-                                }
-                            };
-
-                            let mut round_state = match_.lock_round_state().await;
-                            round_state.set_last_result(battle::BattleResult::Loss);
-                        });
-                    }),
-                )
-            },
-            {
-                let facade = facade.clone();
-                let handle = handle.clone();
-                (
-                    self.offsets.rom.round_end_damage_judge_set_win,
-                    Box::new(move |_| {
-                        handle.block_on(async {
-                            let match_ = match facade.match_().await {
-                                Some(match_) => match_,
-                                None => {
-                                    return;
-                                }
-                            };
-
-                            let mut round_state = match_.lock_round_state().await;
-                            round_state.set_last_result(battle::BattleResult::Win);
-                        });
-                    }),
-                )
-            },
-            {
-                let facade = facade.clone();
-                let handle = handle.clone();
-                (
-                    self.offsets.rom.round_end_damage_judge_set_loss,
-                    Box::new(move |_| {
-                        handle.block_on(async {
-                            let match_ = match facade.match_().await {
-                                Some(match_) => match_,
-                                None => {
-                                    return;
-                                }
-                            };
-
-                            let mut round_state = match_.lock_round_state().await;
-                            round_state.set_last_result(battle::BattleResult::Loss);
-                        });
-                    }),
-                )
-            },
-            {
-                let facade = facade.clone();
-                let handle = handle.clone();
-                (
-                    self.offsets.rom.round_end_damage_judge_set_draw,
-                    Box::new(move |_| {
-                        handle.block_on(async {
-                            let match_ = match facade.match_().await {
-                                Some(match_) => match_,
-                                None => {
-                                    return;
-                                }
-                            };
-
-                            let mut round_state = match_.lock_round_state().await;
-                            let result = {
-                                let round = round_state.round.as_ref().expect("round");
-                                round.on_draw_result()
-                            };
-                            round_state.set_last_result(result);
-                        });
-                    }),
-                )
-            },
-            {
-                let facade = facade.clone();
-                let handle = handle.clone();
-                (
-                    self.offsets.rom.round_set_ending,
-                    Box::new(move |_| {
-                        handle.block_on(async {
-                            let match_ = match facade.match_().await {
-                                Some(match_) => match_,
-                                None => {
-                                    return;
-                                }
-                            };
-
-                            let mut round_state = match_.lock_round_state().await;
-                            round_state.end_round().await.expect("end round");
-                            match_
-                                .advance_shadow_until_round_end()
-                                .await
-                                .expect("advance shadow");
-                        });
-                    }),
-                )
-            },
-            {
-                let facade = facade.clone();
                 let munger = self.munger.clone();
                 let handle = handle.clone();
                 (
@@ -481,13 +353,14 @@ impl hooks::Hooks for BN6 {
                                     );
                                 }
 
-                                if !round
+                                if let Err(e) = round
                                     .add_local_input_and_fastforward(
                                         core,
                                         joyflags.load(std::sync::atomic::Ordering::Relaxed) as u16,
                                     )
                                     .await
                                 {
+                                    log::error!("failed to add local input: {}", e);
                                     break 'abort;
                                 }
                                 return;
@@ -971,9 +844,18 @@ impl hooks::Hooks for BN6 {
             {
                 let replayer_state = replayer_state.clone();
                 (
+                    self.offsets.rom.round_set_ending,
+                    Box::new(move |_core| {
+                        replayer_state.set_round_ending();
+                    }),
+                )
+            },
+            {
+                let replayer_state = replayer_state.clone();
+                (
                     self.offsets.rom.round_end_entry,
                     Box::new(move |_core| {
-                        replayer_state.end_round();
+                        replayer_state.set_round_ended();
                     }),
                 )
             },
@@ -1042,7 +924,7 @@ impl hooks::Hooks for BN6 {
                 (
                     self.offsets.rom.copy_input_data_entry,
                     Box::new(move |core| {
-                        if replayer_state.round_end_tick().is_some() {
+                        if replayer_state.round_set_ending_tick().is_some() {
                             return;
                         }
 
