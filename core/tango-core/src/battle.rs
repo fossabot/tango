@@ -700,8 +700,25 @@ impl Round {
         let mut shadow = self.shadow.lock().await;
         let input_pairs = input_pairs
             .into_iter()
-            .map(|pair| shadow.apply_input(pair))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|pair| {
+                let tx = shadow.apply_input(
+                    pair.local.local_tick,
+                    pair.local.joyflags,
+                    pair.local.rx.clone(),
+                    pair.remote.joyflags,
+                )?;
+                Ok(input::Pair {
+                    local: pair.local,
+                    remote: input::Input {
+                        local_tick: pair.remote.local_tick,
+                        remote_tick: pair.remote.remote_tick,
+                        joyflags: pair.remote.joyflags,
+                        rx: tx,
+                        is_prediction: false,
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, anyhow::Error>>()?;
 
         if let Some(last) = input_pairs.last() {
             self.last_committed_remote_input = last.remote.clone();

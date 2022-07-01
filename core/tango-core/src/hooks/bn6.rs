@@ -1,4 +1,4 @@
-use crate::{battle, facade, hooks, input, replayer, shadow};
+use crate::{battle, facade, hooks, replayer, shadow};
 
 mod munger;
 mod offsets;
@@ -792,40 +792,19 @@ impl hooks::Hooks for BN6 {
                             ));
                         }
 
-                        if let Some(ip) = round.take_in_input_pair() {
-                            if ip.local.local_tick != ip.remote.local_tick {
-                                shadow_state.set_anyhow_error(anyhow::anyhow!(
-                                    "read joyflags: local tick != remote tick (in battle tick = {}): {} != {}",
-                                    round.current_tick(),
-                                    ip.local.local_tick,
-                                    ip.remote.local_tick
-                                ));
-                                return;
-                            }
-
-                            if ip.local.local_tick != round.current_tick() {
+                        if let Some(si) = round.peek_shadow_input().clone() {
+                            if si.tick != round.current_tick() {
                                 shadow_state.set_anyhow_error(anyhow::anyhow!(
                                     "read joyflags: input tick != in battle tick: {} != {}",
-                                    ip.local.local_tick,
+                                    si.tick,
                                     round.current_tick(),
                                 ));
                                 return;
                             }
-
-                            round.set_out_input_pair(input::Pair {
-                                local: ip.local,
-                                remote: input::Input {
-                                    local_tick: ip.remote.local_tick,
-                                    remote_tick: ip.remote.remote_tick,
-                                    joyflags: ip.remote.joyflags,
-                                    rx: munger.tx_packet(core).to_vec(),
-                                    is_prediction: false,
-                                },
-                            });
 
                             core.gba_mut()
                                 .cpu_mut()
-                                .set_gpr(4, (ip.remote.joyflags | 0xfc00) as i32);
+                                .set_gpr(4, (si.remote_joyflags | 0xfc00) as i32);
                         }
 
                         if round.take_input_injected() {
@@ -855,49 +834,39 @@ impl hooks::Hooks for BN6 {
                             ));
                         }
 
-                        let ip = if let Some(ip) = round.peek_out_input_pair().as_ref() {
-                            ip
+                        let si = if let Some(si) = round.take_shadow_input() {
+                            si
                         } else {
                             return;
                         };
 
                         // HACK: This is required if the emulator advances beyond read joyflags and runs this function again, but is missing input data.
                         // We permit this for one tick only, but really we should just not be able to get into this situation in the first place.
-                        if ip.local.local_tick + 1 == round.current_tick() {
+                        if si.tick + 1 == round.current_tick() {
                             return;
                         }
 
-                        if ip.local.local_tick != ip.remote.local_tick {
-                            shadow_state.set_anyhow_error(anyhow::anyhow!(
-                                "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
-                                round.current_tick(),
-                                ip.local.local_tick,
-                                ip.remote.local_tick
-                            ));
-                            return;
-                        }
-
-                        if ip.local.local_tick != round.current_tick() {
+                        if si.tick != round.current_tick() {
                             shadow_state.set_anyhow_error(anyhow::anyhow!(
                                 "copy input data: input tick != in battle tick: {} != {}",
-                                ip.local.local_tick,
+                                si.tick,
                                 round.current_tick(),
                             ));
                             return;
                         }
 
+                        let tx = munger.tx_packet(core).to_vec();
                         munger.set_rx_packet(
                             core,
                             round.local_player_index() as u32,
-                            &ip.local.rx.clone().try_into().unwrap(),
+                            &si.local_rx.try_into().unwrap(),
                         );
-
                         munger.set_rx_packet(
                             core,
                             round.remote_player_index() as u32,
-                            &ip.remote.rx.clone().try_into().unwrap(),
+                            &tx.clone().try_into().unwrap(),
                         );
-
+                        round.set_out_tx(tx);
                         round.set_input_injected();
                     }),
                 )
