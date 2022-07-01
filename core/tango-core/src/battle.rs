@@ -83,7 +83,7 @@ impl RoundState {
 }
 
 pub struct Match {
-    shadow: std::sync::Arc<tokio::sync::Mutex<shadow::Shadow>>,
+    shadow: std::sync::Arc<parking_lot::Mutex<shadow::Shadow>>,
     rom: Vec<u8>,
     hooks: &'static Box<dyn hooks::Hooks + Send + Sync>,
     _peer_conn: datachannel_wrapper::PeerConnection,
@@ -188,7 +188,7 @@ impl Match {
             BattleResult::Loss
         };
         let match_ = std::sync::Arc::new(Self {
-            shadow: std::sync::Arc::new(tokio::sync::Mutex::new(shadow::Shadow::new(
+            shadow: std::sync::Arc::new(parking_lot::Mutex::new(shadow::Shadow::new(
                 &shadow_rom,
                 &settings.shadow_save_path,
                 settings.match_type,
@@ -221,16 +221,13 @@ impl Match {
     }
 
     pub async fn advance_shadow_until_round_end(&self) -> anyhow::Result<()> {
-        self.shadow.lock().await.advance_until_round_end()
+        self.shadow.lock().advance_until_round_end()
     }
 
     pub async fn advance_shadow_until_first_committed_state(
         &self,
     ) -> anyhow::Result<mgba::state::State> {
-        self.shadow
-            .lock()
-            .await
-            .advance_until_first_committed_state()
+        self.shadow.lock().advance_until_first_committed_state()
     }
 
     pub async fn run(
@@ -399,12 +396,10 @@ impl Match {
             dtick: 0,
             iq,
             remote_delay: self.settings.shadow_input_delay,
-            last_committed_remote_input: input::Input {
+            last_committed_remote_input: input::PartialInput {
                 local_tick: 0,
                 remote_tick: 0,
                 joyflags: 0,
-                packet: vec![0; self.hooks.packet_size()],
-                is_prediction: false,
             },
             first_state_committed_local_packet: Some(first_state_committed_local_packet),
             first_state_committed_rx: Some(first_state_committed_rx),
@@ -439,7 +434,7 @@ pub struct Round {
     dtick: i32,
     iq: input::PairQueue<input::PartialInput, input::PartialInput>,
     remote_delay: u32,
-    last_committed_remote_input: input::Input,
+    last_committed_remote_input: input::PartialInput,
     first_state_committed_local_packet: Option<tokio::sync::oneshot::Sender<()>>,
     first_state_committed_rx: Option<tokio::sync::oneshot::Receiver<()>>,
     committed_state: Option<CommittedState>,
@@ -448,7 +443,7 @@ pub struct Round {
     replay_filename: std::path::PathBuf,
     primary_thread_handle: mgba::thread::Handle,
     transport: std::sync::Arc<tokio::sync::Mutex<transport::Transport>>,
-    shadow: std::sync::Arc<tokio::sync::Mutex<shadow::Shadow>>,
+    shadow: std::sync::Arc<parking_lot::Mutex<shadow::Shadow>>,
 }
 
 impl Round {
@@ -500,7 +495,7 @@ impl Round {
         joyflags: u16,
     ) -> anyhow::Result<Option<BattleResult>> {
         let local_tick = self.current_tick + self.local_delay();
-        let remote_tick = self.last_committed_remote_input().local_tick;
+        let remote_tick = self.last_committed_remote_input.local_tick;
 
         // We do it in this order such that:
         // 1. We make sure that the input buffer does not overflow if we were to add an input.
@@ -530,26 +525,38 @@ impl Round {
         });
 
         let (input_pairs, left) = self.iq.consume_and_peek_local();
+        if let Some(last) = input_pairs.last() {
+            self.last_committed_remote_input = last.remote.clone();
+        }
 
         let last_committed_state = self.committed_state.take().expect("committed state");
+        let commit_tick = last_committed_state.tick + input_pairs.len() as u32;
 
         let ff_result = self.replayer.fastforward(
             &last_committed_state.state,
             last_committed_state.tick,
             &input_pairs,
             &left,
-            self.last_committed_remote_input.clone(),
+            self.last_committed_remote_input.joyflags,
             &last_committed_state.packet,
             Box::new({
                 let shadow = self.shadow.clone();
-                move |si| shadow.blocking_lock().apply_input(si)
+                let mut last_commit = None;
+                move |si| {
+                    Ok(if si.tick <= commit_tick {
+                        let r = shadow.lock().apply_input(si)?;
+                        last_commit = Some(r.clone());
+                        r
+                    } else {
+                        let r = last_commit.clone().unwrap();
+                        r
+                    })
+                }
             }),
         )?;
 
-        let committed_tick = last_committed_state.tick + input_pairs.len() as u32;
-
         // for ip in &ff_result.consumed_input_pairs {
-        //     if ip.local.local_tick >= committed_tick {
+        //     if ip.local.local_tick >= commit_tick {
         //         break;
         //     }
 
@@ -565,13 +572,7 @@ impl Round {
             .expect("load dirty state");
         self.committed_state = Some(ff_result.committed_state);
 
-        self.dtick = (if let Some(inp) = left.last() {
-            inp
-        } else {
-            &input_pairs.last().unwrap().local
-        })
-        .lag()
-            - self.last_committed_remote_input().lag();
+        self.dtick = ff_result.last_input.local.lag() - self.last_committed_remote_input.lag();
 
         core.gba_mut()
             .sync_mut()
@@ -584,7 +585,7 @@ impl Round {
             return Ok(None);
         };
 
-        if round_result.tick > committed_tick {
+        if round_result.tick > commit_tick {
             return Ok(None);
         }
 
@@ -626,9 +627,6 @@ impl Round {
 
     pub fn remote_queue_length(&self) -> usize {
         self.iq.remote_queue_length()
-    }
-    pub fn last_committed_remote_input(&self) -> &input::Input {
-        &self.last_committed_remote_input
     }
 
     pub fn can_add_local_input(&mut self) -> bool {

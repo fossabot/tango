@@ -103,7 +103,6 @@ impl Replay {
                     break;
                 },
                 packet: vec![0u8; input_raw_size],
-                is_prediction: false,
             };
             if zr.read_exact(&mut p1_input.packet).is_err() {
                 break;
@@ -118,7 +117,6 @@ impl Replay {
                     break;
                 },
                 packet: vec![0u8; input_raw_size],
-                is_prediction: false,
             };
             if zr.read_exact(&mut p2_input.packet).is_err() {
                 break;

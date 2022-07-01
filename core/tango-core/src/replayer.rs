@@ -23,6 +23,7 @@ pub struct FastforwardResult {
     pub committed_state: battle::CommittedState,
     pub dirty_state: battle::CommittedState,
     pub round_result: Option<RoundResult>,
+    pub last_input: input::Pair<input::PartialInput, input::PartialInput>,
 }
 
 #[derive(Clone, Copy, serde_repr::Serialize_repr)]
@@ -280,7 +281,7 @@ impl Fastforwarder {
         last_committed_tick: u32,
         committable_inputs: &[input::Pair<input::PartialInput, input::PartialInput>],
         predictable_inputs: &[input::PartialInput],
-        last_committed_remote_input: input::Input,
+        last_remote_joyflags: u16,
         last_local_packet: &[u8],
         apply_shadow_input: Box<dyn FnMut(shadow::Input) -> anyhow::Result<Vec<u8>> + Sync + Send>,
     ) -> anyhow::Result<FastforwardResult> {
@@ -303,14 +304,10 @@ impl Fastforwarder {
                         remote_tick,
                         joyflags: {
                             let mut joyflags = 0;
-                            if last_committed_remote_input.joyflags & mgba::input::keys::A as u16
-                                != 0
-                            {
+                            if last_remote_joyflags & mgba::input::keys::A as u16 != 0 {
                                 joyflags |= mgba::input::keys::A as u16;
                             }
-                            if last_committed_remote_input.joyflags & mgba::input::keys::B as u16
-                                != 0
-                            {
+                            if last_remote_joyflags & mgba::input::keys::B as u16 != 0 {
                                 joyflags |= mgba::input::keys::B as u16;
                             }
                             joyflags
@@ -319,6 +316,7 @@ impl Fastforwarder {
                 }
             }))
             .collect::<Vec<input::Pair<input::PartialInput, input::PartialInput>>>();
+        let last_input = input_pairs.last().expect("last input pair").clone();
 
         *self.state.0.lock() = Some(InnerState {
             current_tick: last_committed_tick,
@@ -345,6 +343,7 @@ impl Fastforwarder {
                     return Ok(FastforwardResult {
                         committed_state: state.committed_state.expect("committed state"),
                         dirty_state: state.dirty_state.expect("dirty state"),
+                        last_input,
                         round_result: state.round_result,
                     });
                 }

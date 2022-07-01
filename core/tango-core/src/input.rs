@@ -4,7 +4,12 @@ pub struct Input {
     pub remote_tick: u32,
     pub joyflags: u16,
     pub packet: Vec<u8>,
-    pub is_prediction: bool,
+}
+
+impl Input {
+    pub fn lag(&self) -> i32 {
+        self.remote_tick as i32 - self.local_tick as i32
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -15,12 +20,6 @@ pub struct PartialInput {
 }
 
 impl PartialInput {
-    pub fn lag(&self) -> i32 {
-        self.remote_tick as i32 - self.local_tick as i32
-    }
-}
-
-impl Input {
     pub fn lag(&self) -> i32 {
         self.remote_tick as i32 - self.local_tick as i32
     }
