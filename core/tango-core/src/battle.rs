@@ -18,8 +18,9 @@ pub enum BattleResult {
 
 #[derive(Clone)]
 pub struct CommittedState {
-    state: mgba::state::State,
-    tick: u32,
+    pub state: mgba::state::State,
+    pub tick: u32,
+    pub packet: Vec<u8>,
 }
 
 pub struct MatchInit {
@@ -343,7 +344,7 @@ impl Match {
         self.is_offerer
     }
 
-    pub async fn start_round(self: &std::sync::Arc<Self>, first_tx: &[u8]) -> anyhow::Result<()> {
+    pub async fn start_round(self: &std::sync::Arc<Self>) -> anyhow::Result<()> {
         let mut round_state = self.round_state.lock().await;
         round_state.number += 1;
         let local_player_index = match round_state.last_result.take().unwrap() {
@@ -366,14 +367,8 @@ impl Match {
 
         log::info!("preparing round state");
 
-        let (first_state_committed_tx, first_state_committed_rx) = tokio::sync::oneshot::channel();
-
-        let mut tx_queue =
-            std::collections::VecDeque::with_capacity(self.settings.max_queue_length);
-        tx_queue.push_front(Tx {
-            for_tick: 0,
-            tx: first_tx.to_vec(),
-        });
+        let (first_state_committed_local_packet, first_state_committed_rx) =
+            tokio::sync::oneshot::channel();
 
         let mut iq =
             input::PairQueue::new(self.settings.max_queue_length, self.settings.input_delay);
@@ -401,18 +396,17 @@ impl Match {
             number: round_state.number,
             local_player_index,
             current_tick: 0,
+            dtick: 0,
             iq,
-            tx_queue,
             remote_delay: self.settings.shadow_input_delay,
             last_committed_remote_input: input::Input {
                 local_tick: 0,
                 remote_tick: 0,
                 joyflags: 0,
-                rx: vec![0; self.hooks.rx_size()],
+                packet: vec![0; self.hooks.packet_size()],
                 is_prediction: false,
             },
-            last_input: None,
-            first_state_committed_tx: Some(first_state_committed_tx),
+            first_state_committed_local_packet: Some(first_state_committed_local_packet),
             first_state_committed_rx: Some(first_state_committed_rx),
             committed_state: None,
             replay_filename: replay_filename.to_owned(),
@@ -420,7 +414,7 @@ impl Match {
                 Box::new(replay_file),
                 &self.settings.replay_metadata,
                 local_player_index,
-                self.hooks.rx_size() as u8,
+                self.hooks.packet_size() as u8,
             )?),
             replayer: replayer::Fastforwarder::new(
                 &self.rom,
@@ -438,22 +432,15 @@ impl Match {
     }
 }
 
-#[derive(Clone)]
-struct Tx {
-    for_tick: u32,
-    tx: Vec<u8>,
-}
-
 pub struct Round {
     number: u8,
     local_player_index: u8,
     current_tick: u32,
+    dtick: i32,
     iq: input::PairQueue<input::PartialInput, input::PartialInput>,
-    tx_queue: std::collections::VecDeque<Tx>,
     remote_delay: u32,
     last_committed_remote_input: input::Input,
-    last_input: Option<input::Pair<input::Input, input::Input>>,
-    first_state_committed_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    first_state_committed_local_packet: Option<tokio::sync::oneshot::Sender<()>>,
     first_state_committed_rx: Option<tokio::sync::oneshot::Receiver<()>>,
     committed_state: Option<CommittedState>,
     replay_writer: Option<replay::Writer>,
@@ -485,6 +472,7 @@ impl Round {
         &mut self,
         state: mgba::state::State,
         remote_state: mgba::state::State,
+        first_packet: &[u8],
     ) {
         self.replay_writer
             .as_mut()
@@ -496,8 +484,12 @@ impl Round {
             .unwrap()
             .write_state(&remote_state)
             .expect("write remote state");
-        self.committed_state = Some(CommittedState { state, tick: 0 });
-        if let Some(tx) = self.first_state_committed_tx.take() {
+        self.committed_state = Some(CommittedState {
+            state,
+            tick: 0,
+            packet: first_packet.to_vec(),
+        });
+        if let Some(tx) = self.first_state_committed_local_packet.take() {
             let _ = tx.send(());
         }
     }
@@ -537,42 +529,49 @@ impl Round {
             joyflags,
         });
 
-        let (input_pairs, left) = self.consume_and_peek_local().await?;
+        let (input_pairs, left) = self.iq.consume_and_peek_local();
 
         let last_committed_state = self.committed_state.take().expect("committed state");
-        let last_committed_remote_input = self.last_committed_remote_input();
 
         let ff_result = self.replayer.fastforward(
             &last_committed_state.state,
             last_committed_state.tick,
             &input_pairs,
-            last_committed_remote_input,
             &left,
+            self.last_committed_remote_input.clone(),
+            &last_committed_state.packet,
+            Box::new({
+                let shadow = self.shadow.clone();
+                move |si| shadow.blocking_lock().apply_input(si)
+            }),
         )?;
 
         let committed_tick = last_committed_state.tick + input_pairs.len() as u32;
 
-        for ip in &ff_result.consumed_input_pairs {
-            if ip.local.local_tick >= committed_tick {
-                break;
-            }
+        // for ip in &ff_result.consumed_input_pairs {
+        //     if ip.local.local_tick >= committed_tick {
+        //         break;
+        //     }
 
-            if let Some(replay_writer) = self.replay_writer.as_mut() {
-                log::info!("\n  {:02x?}\n  {:02x?}", ip.local.rx, ip.remote.rx);
-                replay_writer
-                    .write_input(self.local_player_index, ip)
-                    .expect("write input");
-            }
-        }
+        //     if let Some(replay_writer) = self.replay_writer.as_mut() {
+        //         log::info!("\n  {:02x?}\n  {:02x?}", ip.local.packet, ip.remote.packet);
+        //         replay_writer
+        //             .write_input(self.local_player_index, ip)
+        //             .expect("write input");
+        //     }
+        // }
 
-        core.load_state(&ff_result.dirty_state)
+        core.load_state(&ff_result.dirty_state.state)
             .expect("load dirty state");
+        self.committed_state = Some(ff_result.committed_state);
 
-        self.committed_state = Some(CommittedState {
-            state: ff_result.committed_state,
-            tick: committed_tick,
-        });
-        self.last_input = Some(ff_result.last_input);
+        self.dtick = (if let Some(inp) = left.last() {
+            inp
+        } else {
+            &input_pairs.last().unwrap().local
+        })
+        .lag()
+            - self.last_committed_remote_input().lag();
 
         core.gba_mut()
             .sync_mut()
@@ -613,10 +612,6 @@ impl Round {
         self.committed_state.is_some()
     }
 
-    pub fn peek_last_input(&self) -> &Option<input::Pair<input::Input, input::Input>> {
-        &self.last_input
-    }
-
     pub fn local_delay(&self) -> u32 {
         self.iq.local_delay()
     }
@@ -632,99 +627,8 @@ impl Round {
     pub fn remote_queue_length(&self) -> usize {
         self.iq.remote_queue_length()
     }
-    pub fn last_committed_remote_input(&self) -> input::Input {
-        self.last_committed_remote_input.clone()
-    }
-
-    pub fn queue_tx(&mut self, for_tick: u32, tx: Vec<u8>) {
-        self.tx_queue.push_back(Tx { for_tick, tx });
-    }
-
-    pub async fn consume_and_peek_local(
-        &mut self,
-    ) -> anyhow::Result<(
-        Vec<input::Pair<input::Input, input::Input>>,
-        Vec<input::Input>,
-    )> {
-        let (partial_input_pairs, left) = self.iq.consume_and_peek_local();
-
-        let partial_input_pairs_len = partial_input_pairs.len();
-        assert!(
-            self.tx_queue.len() >= partial_input_pairs_len + left.len(),
-            "not enough tx queue inputs"
-        );
-
-        let input_pairs = partial_input_pairs
-            .into_iter()
-            .zip(self.tx_queue.drain(..partial_input_pairs_len))
-            .map(|(pair, tx)| {
-                assert!(
-                    tx.for_tick == pair.local.local_tick,
-                    "tx input did not match current tick: {} != {}",
-                    tx.for_tick,
-                    pair.local.local_tick
-                );
-                input::Pair {
-                    local: input::Input {
-                        local_tick: pair.local.local_tick,
-                        remote_tick: pair.local.remote_tick,
-                        joyflags: pair.local.joyflags,
-                        rx: tx.tx,
-                        is_prediction: false,
-                    },
-                    remote: pair.remote,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let left = left
-            .into_iter()
-            .zip(self.tx_queue.iter().cloned())
-            .map(|(pi, tx)| {
-                assert!(
-                    tx.for_tick == pi.local_tick,
-                    "tx input did not match current tick: {} != {}",
-                    tx.for_tick,
-                    pi.local_tick
-                );
-                input::Input {
-                    local_tick: pi.local_tick,
-                    remote_tick: pi.remote_tick,
-                    joyflags: pi.joyflags,
-                    rx: tx.tx,
-                    is_prediction: true,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let mut shadow = self.shadow.lock().await;
-        let input_pairs = input_pairs
-            .into_iter()
-            .map(|pair| {
-                let tx = shadow.apply_input(
-                    pair.local.local_tick,
-                    pair.local.joyflags,
-                    pair.local.rx.clone(),
-                    pair.remote.joyflags,
-                )?;
-                Ok(input::Pair {
-                    local: pair.local,
-                    remote: input::Input {
-                        local_tick: pair.remote.local_tick,
-                        remote_tick: pair.remote.remote_tick,
-                        joyflags: pair.remote.joyflags,
-                        rx: tx,
-                        is_prediction: false,
-                    },
-                })
-            })
-            .collect::<Result<Vec<_>, anyhow::Error>>()?;
-
-        if let Some(last) = input_pairs.last() {
-            self.last_committed_remote_input = last.remote.clone();
-        }
-
-        Ok((input_pairs, left))
+    pub fn last_committed_remote_input(&self) -> &input::Input {
+        &self.last_committed_remote_input
     }
 
     pub fn can_add_local_input(&mut self) -> bool {
@@ -746,15 +650,8 @@ impl Round {
     }
 
     pub fn tps_adjustment(&self) -> f32 {
-        let last_local_input = match &self.last_input {
-            Some(input::Pair { local, .. }) => local,
-            None => {
-                return 0.0;
-            }
-        };
-        let dtick = last_local_input.lag() - self.last_committed_remote_input.lag();
         let ddelay = self.local_delay() as i32 - self.remote_delay() as i32;
-        ((dtick + ddelay) * game::EXPECTED_FPS as i32) as f32 / self.iq.max_length() as f32
+        ((self.dtick + ddelay) * game::EXPECTED_FPS as i32) as f32 / self.iq.max_length() as f32
     }
 }
 

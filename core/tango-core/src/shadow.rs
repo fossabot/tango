@@ -5,7 +5,7 @@ pub struct Round {
     local_player_index: u8,
     first_committed_state: Option<mgba::state::State>,
     pending_shadow_input: Option<Input>,
-    pending_out_tx: Option<Vec<u8>>,
+    pending_remote_packet: Option<Vec<u8>>,
     input_injected: bool,
 }
 
@@ -46,8 +46,8 @@ impl Round {
         self.pending_shadow_input.take()
     }
 
-    pub fn set_out_tx(&mut self, tx: Vec<u8>) {
-        self.pending_out_tx = Some(tx);
+    pub fn set_remote_packet(&mut self, tx: Vec<u8>) {
+        self.pending_remote_packet = Some(tx);
     }
 
     pub fn peek_shadow_input(&mut self) -> &Option<Input> {
@@ -148,7 +148,7 @@ impl State {
             local_player_index,
             first_committed_state: None,
             pending_shadow_input: None,
-            pending_out_tx: None,
+            pending_remote_packet: None,
             input_injected: false,
         });
     }
@@ -172,7 +172,7 @@ impl State {
 pub struct Input {
     pub tick: u32,
     pub local_joyflags: u16,
-    pub local_rx: Vec<u8>,
+    pub local_packet: Vec<u8>,
     pub remote_joyflags: u16,
 }
 
@@ -266,22 +266,11 @@ impl Shadow {
         }
     }
 
-    pub fn apply_input(
-        &mut self,
-        tick: u32,
-        local_joyflags: u16,
-        local_rx: Vec<u8>,
-        remote_joyflags: u16,
-    ) -> anyhow::Result<Vec<u8>> {
+    pub fn apply_input(&mut self, input: Input) -> anyhow::Result<Vec<u8>> {
         {
             let mut round_state = self.state.lock_round_state();
             let round = round_state.round.as_mut().expect("round");
-            round.pending_shadow_input = Some(Input {
-                tick,
-                local_joyflags,
-                local_rx,
-                remote_joyflags,
-            });
+            round.pending_shadow_input = Some(input);
         }
         self.hooks.prepare_for_fastforward(self.core.as_mut());
         loop {
@@ -303,7 +292,10 @@ impl Shadow {
             let mut round_state = self.state.lock_round_state();
             let round = round_state.round.as_mut().expect("round");
             round.current_tick = applied_state.tick;
-            return Ok(round.pending_out_tx.take().expect("pending out input"));
+            return Ok(round
+                .pending_remote_packet
+                .take()
+                .expect("pending out input"));
         }
     }
 }

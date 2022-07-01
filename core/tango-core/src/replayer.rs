@@ -1,15 +1,18 @@
+use crate::battle;
 use crate::hooks;
 use crate::input;
+use crate::shadow;
 
 struct InnerState {
     current_tick: u32,
     local_player_index: u8,
-    input_pairs: std::collections::VecDeque<input::Pair<input::Input, input::Input>>,
-    consumed_input_pairs: Vec<input::Pair<input::Input, input::Input>>,
+    input_pairs: std::collections::VecDeque<input::Pair<input::PartialInput, input::PartialInput>>,
+    apply_shadow_input: Box<dyn FnMut(shadow::Input) -> anyhow::Result<Vec<u8>> + Sync + Send>,
+    local_packet: Option<Vec<u8>>,
     commit_tick: u32,
-    committed_state: Option<mgba::state::State>,
+    committed_state: Option<battle::CommittedState>,
     dirty_tick: u32,
-    dirty_state: Option<mgba::state::State>,
+    dirty_state: Option<battle::CommittedState>,
     round_result: Option<RoundResult>,
     phase: RoundPhase,
     on_round_ended: Box<dyn Fn() + Sync + Send>,
@@ -17,10 +20,8 @@ struct InnerState {
 }
 
 pub struct FastforwardResult {
-    pub committed_state: mgba::state::State,
-    pub dirty_state: mgba::state::State,
-    pub last_input: input::Pair<input::Input, input::Input>,
-    pub consumed_input_pairs: Vec<input::Pair<input::Input, input::Input>>,
+    pub committed_state: battle::CommittedState,
+    pub dirty_state: battle::CommittedState,
     pub round_result: Option<RoundResult>,
 }
 
@@ -62,12 +63,40 @@ impl State {
         commit_tick: u32,
         on_round_ended: Box<dyn Fn() + Sync + Send>,
     ) -> State {
+        let local_packet = input_pairs.first().map(|ip| ip.local.packet.clone());
         State(std::sync::Arc::new(parking_lot::Mutex::new(Some(
             InnerState {
                 current_tick: 0,
                 local_player_index,
-                input_pairs: input_pairs.into_iter().collect(),
-                consumed_input_pairs: vec![],
+                input_pairs: input_pairs
+                    .iter()
+                    .map(|ip| input::Pair {
+                        local: input::PartialInput {
+                            local_tick: ip.local.local_tick,
+                            remote_tick: ip.local.remote_tick,
+                            joyflags: ip.local.joyflags,
+                        },
+                        remote: input::PartialInput {
+                            local_tick: ip.remote.local_tick,
+                            remote_tick: ip.remote.remote_tick,
+                            joyflags: ip.remote.joyflags,
+                        },
+                    })
+                    .collect(),
+                apply_shadow_input: Box::new({
+                    let mut iq = input_pairs
+                        .into_iter()
+                        .collect::<std::collections::VecDeque<_>>();
+                    move |_| {
+                        let ip = if let Some(ip) = iq.pop_front() {
+                            ip
+                        } else {
+                            anyhow::bail!("no more committed inputs");
+                        };
+                        Ok(ip.remote.packet)
+                    }
+                }),
+                local_packet,
                 commit_tick,
                 committed_state: None,
                 dirty_tick: 0,
@@ -98,14 +127,16 @@ impl State {
     }
 
     pub fn set_committed_state(&self, state: mgba::state::State) {
-        self.0
-            .lock()
-            .as_mut()
-            .expect("committed state")
-            .committed_state = Some(state);
+        let mut inner = self.0.lock();
+        let inner = inner.as_mut().expect("committed state");
+        inner.committed_state = Some(battle::CommittedState {
+            tick: inner.current_tick,
+            state,
+            packet: inner.local_packet.clone().unwrap(),
+        });
     }
 
-    pub fn take_committed_state(&self) -> Option<mgba::state::State> {
+    pub fn take_committed_state(&self) -> Option<battle::CommittedState> {
         self.0
             .lock()
             .as_mut()
@@ -119,10 +150,16 @@ impl State {
     }
 
     pub fn set_dirty_state(&self, state: mgba::state::State) {
-        self.0.lock().as_mut().expect("dirty state").dirty_state = Some(state);
+        let mut inner = self.0.lock();
+        let inner = inner.as_mut().expect("dirty state");
+        inner.dirty_state = Some(battle::CommittedState {
+            tick: inner.current_tick,
+            state,
+            packet: inner.local_packet.clone().unwrap(),
+        });
     }
 
-    pub fn peek_input_pair(&self) -> Option<input::Pair<input::Input, input::Input>> {
+    pub fn peek_input_pair(&self) -> Option<input::Pair<input::PartialInput, input::PartialInput>> {
         self.0
             .lock()
             .as_ref()
@@ -132,14 +169,20 @@ impl State {
             .cloned()
     }
 
-    pub fn pop_input_pair(&self) -> Option<input::Pair<input::Input, input::Input>> {
+    pub fn pop_input_pair(&self) -> Option<input::Pair<input::PartialInput, input::PartialInput>> {
         let mut inner = self.0.lock();
         let inner = inner.as_mut().expect("input pairs");
-        let ip = inner.input_pairs.pop_front();
-        if let Some(ip) = ip.clone() {
-            inner.consumed_input_pairs.push(ip);
-        }
-        ip
+        inner.input_pairs.pop_front()
+    }
+
+    pub fn apply_shadow_input(&self, input: shadow::Input) -> anyhow::Result<Vec<u8>> {
+        let mut inner = self.0.lock();
+        let inner = inner.as_mut().expect("apply shadow input");
+        (inner.apply_shadow_input)(input)
+    }
+
+    pub fn set_local_packet(&self, packet: Vec<u8>) {
+        self.0.lock().as_mut().expect("local packet").local_packet = Some(packet);
     }
 
     pub fn set_anyhow_error(&self, err: anyhow::Error) {
@@ -156,15 +199,6 @@ impl State {
 
     pub fn remote_player_index(&self) -> u8 {
         1 - self.local_player_index()
-    }
-
-    pub fn are_inputs_exhausted(&self) -> bool {
-        self.0
-            .lock()
-            .as_ref()
-            .expect("are inputs exhausted")
-            .input_pairs
-            .is_empty()
     }
 
     pub fn set_round_ending(&self) {
@@ -192,7 +226,7 @@ impl State {
         self.0.lock().as_ref().expect("round result").round_result
     }
 
-    pub fn inputs_pairs_left(&self) -> usize {
+    pub fn input_pairs_left(&self) -> usize {
         self.0
             .lock()
             .as_ref()
@@ -244,21 +278,27 @@ impl Fastforwarder {
         &mut self,
         state: &mgba::state::State,
         last_committed_tick: u32,
-        commit_pairs: &[input::Pair<input::Input, input::Input>],
+        committable_inputs: &[input::Pair<input::PartialInput, input::PartialInput>],
+        predictable_inputs: &[input::PartialInput],
         last_committed_remote_input: input::Input,
-        local_player_inputs_left: &[input::Input],
+        last_local_packet: &[u8],
+        apply_shadow_input: Box<dyn FnMut(shadow::Input) -> anyhow::Result<Vec<u8>> + Sync + Send>,
     ) -> anyhow::Result<FastforwardResult> {
-        let mut predicted_rx = last_committed_remote_input.rx.clone();
-        let input_pairs = commit_pairs
+        self.core.as_mut().load_state(state)?;
+        self.hooks.prepare_for_fastforward(self.core.as_mut());
+
+        let commit_tick = last_committed_tick + committable_inputs.len() as u32;
+        let dirty_tick = commit_tick + predictable_inputs.len() as u32 - 1;
+
+        let input_pairs = committable_inputs
             .iter()
             .cloned()
-            .chain(local_player_inputs_left.iter().cloned().map(|local| {
+            .chain(predictable_inputs.iter().cloned().map(|local| {
                 let local_tick = local.local_tick;
                 let remote_tick = local.remote_tick;
-                self.hooks.predict_rx(&mut predicted_rx);
                 input::Pair {
                     local,
-                    remote: input::Input {
+                    remote: input::PartialInput {
                         local_tick,
                         remote_tick,
                         joyflags: {
@@ -275,25 +315,17 @@ impl Fastforwarder {
                             }
                             joyflags
                         },
-                        rx: predicted_rx.clone(),
-                        is_prediction: true,
                     },
                 }
             }))
-            .collect::<Vec<input::Pair<input::Input, input::Input>>>();
-        let last_input = input_pairs.last().expect("last input pair").clone();
-
-        self.core.as_mut().load_state(state)?;
-        self.hooks.prepare_for_fastforward(self.core.as_mut());
-
-        let commit_tick = last_committed_tick + commit_pairs.len() as u32;
-        let dirty_tick = last_committed_tick + input_pairs.len() as u32 - 1;
+            .collect::<Vec<input::Pair<input::PartialInput, input::PartialInput>>>();
 
         *self.state.0.lock() = Some(InnerState {
             current_tick: last_committed_tick,
             local_player_index: self.local_player_index,
             input_pairs: input_pairs.into_iter().collect(),
-            consumed_input_pairs: vec![],
+            apply_shadow_input,
+            local_packet: Some(last_local_packet.to_vec()),
             commit_tick,
             committed_state: None,
             dirty_tick,
@@ -313,8 +345,6 @@ impl Fastforwarder {
                     return Ok(FastforwardResult {
                         committed_state: state.committed_state.expect("committed state"),
                         dirty_state: state.dirty_state.expect("dirty state"),
-                        consumed_input_pairs: state.consumed_input_pairs,
-                        last_input,
                         round_result: state.round_result,
                     });
                 }
