@@ -137,11 +137,11 @@ impl hooks::Hooks for BN3 {
                         }
                     };
 
-                    // TODO: Fix this.
                     let current_tick = round.current_tick();
                     if current_tick >= 2 {
                         let mut rx = [0x42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-                        byteorder::LittleEndian::write_u32(&mut rx[4..8], current_tick - 2);
+                        byteorder::LittleEndian::write_u32(&mut rx[4..8], current_tick - 1);
+
                         munger.set_rx_packet(core, 0, &rx);
                         munger.set_rx_packet(core, 1, &rx);
                     }
@@ -910,7 +910,7 @@ impl hooks::Hooks for BN3 {
                     Some(ip) => ip,
                     None => {
                         let mut rx = [0x42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-                        byteorder::LittleEndian::write_u32(&mut rx[4..8], current_tick - 2);
+                        byteorder::LittleEndian::write_u32(&mut rx[4..8], current_tick - 1);
                         munger.set_rx_packet(core, 0, &rx);
                         munger.set_rx_packet(core, 1, &rx);
                         return;
@@ -919,11 +919,11 @@ impl hooks::Hooks for BN3 {
 
                 if ip.local.local_tick != ip.remote.local_tick {
                     replayer_state.set_anyhow_error(anyhow::anyhow!(
-                            "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
-                            current_tick,
-                            ip.local.local_tick,
-                            ip.remote.local_tick
-                        ));
+                        "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
+                        current_tick,
+                        ip.local.local_tick,
+                        ip.remote.local_tick
+                    ));
                     return;
                 }
 

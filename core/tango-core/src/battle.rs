@@ -390,16 +390,18 @@ impl Match {
         }
 
         round_state.round = Some(Round {
+            hooks: self.hooks,
             number: round_state.number,
             local_player_index,
             current_tick: 0,
             dtick: 0,
             iq,
             remote_delay: self.settings.shadow_input_delay,
-            last_committed_remote_input: input::PartialInput {
+            last_committed_remote_input: input::Input {
                 local_tick: 0,
                 remote_tick: 0,
                 joyflags: 0,
+                packet: vec![0u8; self.hooks.packet_size()],
             },
             first_state_committed_local_packet: Some(first_state_committed_local_packet),
             first_state_committed_rx: Some(first_state_committed_rx),
@@ -428,13 +430,14 @@ impl Match {
 }
 
 pub struct Round {
+    hooks: &'static Box<dyn hooks::Hooks + Send + Sync>,
     number: u8,
     local_player_index: u8,
     current_tick: u32,
     dtick: i32,
     iq: input::PairQueue<input::PartialInput, input::PartialInput>,
     remote_delay: u32,
-    last_committed_remote_input: input::PartialInput,
+    last_committed_remote_input: input::Input,
     first_state_committed_local_packet: Option<tokio::sync::oneshot::Sender<()>>,
     first_state_committed_rx: Option<tokio::sync::oneshot::Receiver<()>>,
     committed_state: Option<CommittedState>,
@@ -525,9 +528,6 @@ impl Round {
         });
 
         let (committable, predict_required) = self.iq.consume_and_peek_local();
-        if let Some(last) = committable.last() {
-            self.last_committed_remote_input = last.remote.clone();
-        }
 
         let last_committed_state = self.committed_state.take().expect("committed state");
 
@@ -535,9 +535,8 @@ impl Round {
         let dirty_tick = commit_tick + predict_required.len() as u32 - 1;
 
         let input_pairs = committable
-            .iter()
-            .cloned()
-            .chain(predict_required.iter().cloned().map(|local| {
+            .into_iter()
+            .chain(predict_required.into_iter().map(|local| {
                 let local_tick = local.local_tick;
                 let remote_tick = local.remote_tick;
                 input::Pair {
@@ -576,15 +575,16 @@ impl Round {
             &last_committed_state.packet,
             Box::new({
                 let shadow = self.shadow.clone();
-                let mut last_commit = vec![0u8; 0x10]; // TODO
+                let hooks = self.hooks;
+                let mut last_commit = self.last_committed_remote_input.packet.clone();
                 move |ip| {
                     Ok(if ip.local.local_tick < commit_tick {
                         let r = shadow.lock().apply_input(ip)?;
                         last_commit = r.clone();
                         r
                     } else {
-                        let r = last_commit.clone();
-                        r
+                        hooks.predict_rx(&mut last_commit);
+                        last_commit.clone()
                     })
                 }
             }),
@@ -596,10 +596,16 @@ impl Round {
             }
 
             if let Some(replay_writer) = self.replay_writer.as_mut() {
-                log::info!("\n  {:02x?}\n  {:02x?}", ip.local.packet, ip.remote.packet);
+                log::info!(
+                    "{}\n  {:02x?}\n  {:02x?}",
+                    ip.local.local_tick,
+                    ip.local.packet,
+                    ip.remote.packet
+                );
                 replay_writer
                     .write_input(self.local_player_index, ip)
                     .expect("write input");
+                self.last_committed_remote_input = ip.remote.clone();
             }
         }
 
