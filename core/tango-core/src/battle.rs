@@ -596,12 +596,6 @@ impl Round {
             }
 
             if let Some(replay_writer) = self.replay_writer.as_mut() {
-                log::info!(
-                    "{}\n  {:02x?}\n  {:02x?}",
-                    ip.local.local_tick,
-                    ip.local.packet,
-                    ip.remote.packet
-                );
                 replay_writer
                     .write_input(self.local_player_index, ip)
                     .expect("write input");
