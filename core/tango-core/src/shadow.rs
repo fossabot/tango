@@ -1,10 +1,10 @@
-use crate::{battle, hooks};
+use crate::{battle, hooks, input};
 
 pub struct Round {
     current_tick: u32,
     local_player_index: u8,
     first_committed_state: Option<mgba::state::State>,
-    pending_shadow_input: Option<Input>,
+    pending_shadow_input: Option<input::Pair<input::Input, input::PartialInput>>,
     pending_remote_packet: Option<Vec<u8>>,
     input_injected: bool,
 }
@@ -42,7 +42,7 @@ impl Round {
         self.first_committed_state.is_some()
     }
 
-    pub fn take_shadow_input(&mut self) -> Option<Input> {
+    pub fn take_shadow_input(&mut self) -> Option<input::Pair<input::Input, input::PartialInput>> {
         self.pending_shadow_input.take()
     }
 
@@ -50,7 +50,7 @@ impl Round {
         self.pending_remote_packet = Some(tx);
     }
 
-    pub fn peek_shadow_input(&mut self) -> &Option<Input> {
+    pub fn peek_shadow_input(&mut self) -> &Option<input::Pair<input::Input, input::PartialInput>> {
         &self.pending_shadow_input
     }
 
@@ -168,14 +168,6 @@ impl State {
     }
 }
 
-#[derive(Clone)]
-pub struct Input {
-    pub tick: u32,
-    pub local_joyflags: u16,
-    pub local_packet: Vec<u8>,
-    pub remote_joyflags: u16,
-}
-
 impl Shadow {
     pub fn new(
         rom: &[u8],
@@ -266,11 +258,14 @@ impl Shadow {
         }
     }
 
-    pub fn apply_input(&mut self, input: Input) -> anyhow::Result<Vec<u8>> {
+    pub fn apply_input(
+        &mut self,
+        ip: input::Pair<input::Input, input::PartialInput>,
+    ) -> anyhow::Result<Vec<u8>> {
         {
             let mut round_state = self.state.lock_round_state();
             let round = round_state.round.as_mut().expect("round");
-            round.pending_shadow_input = Some(input);
+            round.pending_shadow_input = Some(ip);
         }
         self.hooks.prepare_for_fastforward(self.core.as_mut());
         loop {

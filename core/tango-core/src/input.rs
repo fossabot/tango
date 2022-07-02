@@ -23,6 +23,15 @@ impl PartialInput {
     pub fn lag(&self) -> i32 {
         self.remote_tick as i32 - self.local_tick as i32
     }
+
+    pub fn with_packet(self, packet: Vec<u8>) -> Input {
+        Input {
+            local_tick: self.local_tick,
+            remote_tick: self.remote_tick,
+            joyflags: self.joyflags,
+            packet: packet,
+        }
+    }
 }
 
 pub struct PairQueue<T, U>

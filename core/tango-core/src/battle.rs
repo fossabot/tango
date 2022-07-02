@@ -578,7 +578,7 @@ impl Round {
                 let shadow = self.shadow.clone();
                 let mut last_commit = vec![0u8; 0x10]; // TODO
                 move |si| {
-                    Ok(if si.tick < commit_tick {
+                    Ok(if si.local.local_tick < commit_tick {
                         let r = shadow.lock().apply_input(si)?;
                         last_commit = r.clone();
                         r

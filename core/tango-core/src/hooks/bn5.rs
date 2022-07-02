@@ -1,4 +1,4 @@
-use crate::{battle, facade, hooks, replayer, shadow};
+use crate::{battle, facade, hooks, input, replayer, shadow};
 
 mod munger;
 mod offsets;
@@ -730,11 +730,21 @@ impl hooks::Hooks for BN5 {
                             ));
                         }
 
-                        if let Some(si) = round.peek_shadow_input().clone() {
-                            if si.tick != round.current_tick() {
+                        if let Some(ip) = round.peek_shadow_input().clone() {
+                            if ip.local.local_tick != ip.remote.local_tick {
+                                shadow_state.set_anyhow_error(anyhow::anyhow!(
+                                    "read joyflags: local tick != remote tick (in battle tick = {}): {} != {}",
+                                    round.current_tick(),
+                                    ip.local.local_tick,
+                                    ip.remote.local_tick
+                                ));
+                                return;
+                            }
+
+                            if ip.local.local_tick != round.current_tick() {
                                 shadow_state.set_anyhow_error(anyhow::anyhow!(
                                     "read joyflags: input tick != in battle tick: {} != {}",
-                                    si.tick,
+                                    ip.local.local_tick,
                                     round.current_tick(),
                                 ));
                                 return;
@@ -742,7 +752,7 @@ impl hooks::Hooks for BN5 {
 
                             core.gba_mut()
                                 .cpu_mut()
-                                .set_gpr(4, (si.remote_joyflags | 0xfc00) as i32);
+                                .set_gpr(4, (ip.remote.joyflags | 0xfc00) as i32);
                         }
 
                         if round.take_input_injected() {
@@ -772,22 +782,32 @@ impl hooks::Hooks for BN5 {
                             ));
                         }
 
-                        let si = if let Some(si) = round.take_shadow_input() {
-                            si
+                        let ip = if let Some(ip) = round.take_shadow_input() {
+                            ip
                         } else {
                             return;
                         };
 
                         // HACK: This is required if the emulator advances beyond read joyflags and runs this function again, but is missing input data.
                         // We permit this for one tick only, but really we should just not be able to get into this situation in the first place.
-                        if si.tick + 1 == round.current_tick() {
+                        if ip.local.local_tick + 1 == round.current_tick() {
                             return;
                         }
 
-                        if si.tick != round.current_tick() {
+                        if ip.local.local_tick != ip.remote.local_tick {
+                            shadow_state.set_anyhow_error(anyhow::anyhow!(
+                                "copy input data: local tick != remote tick (in battle tick = {}): {} != {}",
+                                round.current_tick(),
+                                ip.local.local_tick,
+                                ip.remote.local_tick
+                            ));
+                            return;
+                        }
+
+                        if ip.local.local_tick != round.current_tick() {
                             shadow_state.set_anyhow_error(anyhow::anyhow!(
                                 "copy input data: input tick != in battle tick: {} != {}",
-                                si.tick,
+                                ip.local.local_tick,
                                 round.current_tick(),
                             ));
                             return;
@@ -797,7 +817,7 @@ impl hooks::Hooks for BN5 {
                         munger.set_rx_packet(
                             core,
                             round.local_player_index() as u32,
-                            &si.local_packet.try_into().unwrap(),
+                            &ip.local.packet.try_into().unwrap(),
                         );
                         munger.set_rx_packet(
                             core,
@@ -1007,11 +1027,9 @@ impl hooks::Hooks for BN5 {
                             core,
                             replayer_state.remote_player_index() as u32,
                             &replayer_state
-                                .apply_shadow_input(shadow::Input {
-                                    tick: ip.local.local_tick,
-                                    local_joyflags: ip.local.joyflags,
-                                    local_packet: tx,
-                                    remote_joyflags: ip.remote.joyflags,
+                                .apply_shadow_input(input::Pair {
+                                    local: ip.local.with_packet(tx),
+                                    remote: ip.remote,
                                 })
                                 .expect("apply shadow input")
                                 .try_into()

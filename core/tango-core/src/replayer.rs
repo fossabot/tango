@@ -1,7 +1,6 @@
 use crate::battle;
 use crate::hooks;
 use crate::input;
-use crate::shadow;
 
 #[derive(Clone)]
 struct Packet {
@@ -13,7 +12,12 @@ struct InnerState {
     current_tick: u32,
     local_player_index: u8,
     input_pairs: std::collections::VecDeque<input::Pair<input::PartialInput, input::PartialInput>>,
-    apply_shadow_input: Box<dyn FnMut(shadow::Input) -> anyhow::Result<Vec<u8>> + Sync + Send>,
+    output_pairs: Vec<input::Pair<input::Input, input::Input>>,
+    apply_shadow_input: Box<
+        dyn FnMut(input::Pair<input::Input, input::PartialInput>) -> anyhow::Result<Vec<u8>>
+            + Sync
+            + Send,
+    >,
     local_packet: Option<Packet>,
     commit_tick: u32,
     committed_state: Option<battle::CommittedState>,
@@ -105,6 +109,7 @@ impl State {
                         Ok(ip.remote.packet)
                     }
                 }),
+                output_pairs: vec![],
                 local_packet,
                 commit_tick,
                 committed_state: None,
@@ -198,7 +203,10 @@ impl State {
         inner.input_pairs.pop_front()
     }
 
-    pub fn apply_shadow_input(&self, input: shadow::Input) -> anyhow::Result<Vec<u8>> {
+    pub fn apply_shadow_input(
+        &self,
+        input: input::Pair<input::Input, input::PartialInput>,
+    ) -> anyhow::Result<Vec<u8>> {
         let mut inner = self.0.lock();
         let inner = inner.as_mut().expect("apply shadow input");
         (inner.apply_shadow_input)(input)
@@ -305,7 +313,11 @@ impl Fastforwarder {
         commit_tick: u32,
         dirty_tick: u32,
         last_local_packet: &[u8],
-        apply_shadow_input: Box<dyn FnMut(shadow::Input) -> anyhow::Result<Vec<u8>> + Sync + Send>,
+        apply_shadow_input: Box<
+            dyn FnMut(input::Pair<input::Input, input::PartialInput>) -> anyhow::Result<Vec<u8>>
+                + Sync
+                + Send,
+        >,
     ) -> anyhow::Result<FastforwardResult> {
         self.core.as_mut().load_state(state)?;
         self.hooks.prepare_for_fastforward(self.core.as_mut());
@@ -314,6 +326,7 @@ impl Fastforwarder {
             current_tick,
             local_player_index: self.local_player_index,
             input_pairs: input_pairs.into_iter().collect(),
+            output_pairs: vec![],
             apply_shadow_input,
             local_packet: Some(Packet {
                 tick: current_tick,
