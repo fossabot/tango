@@ -23,7 +23,6 @@ pub struct FastforwardResult {
     pub committed_state: battle::CommittedState,
     pub dirty_state: battle::CommittedState,
     pub round_result: Option<RoundResult>,
-    pub last_input: input::Pair<input::PartialInput, input::PartialInput>,
 }
 
 #[derive(Clone, Copy, serde_repr::Serialize_repr)]
@@ -278,48 +277,18 @@ impl Fastforwarder {
     pub fn fastforward(
         &mut self,
         state: &mgba::state::State,
-        last_committed_tick: u32,
-        committable_inputs: &[input::Pair<input::PartialInput, input::PartialInput>],
-        predictable_inputs: &[input::PartialInput],
-        last_remote_joyflags: u16,
+        input_pairs: Vec<input::Pair<input::PartialInput, input::PartialInput>>,
+        current_tick: u32,
+        commit_tick: u32,
+        dirty_tick: u32,
         last_local_packet: &[u8],
         apply_shadow_input: Box<dyn FnMut(shadow::Input) -> anyhow::Result<Vec<u8>> + Sync + Send>,
     ) -> anyhow::Result<FastforwardResult> {
         self.core.as_mut().load_state(state)?;
         self.hooks.prepare_for_fastforward(self.core.as_mut());
 
-        let commit_tick = last_committed_tick + committable_inputs.len() as u32;
-        let dirty_tick = commit_tick + predictable_inputs.len() as u32 - 1;
-
-        let input_pairs = committable_inputs
-            .iter()
-            .cloned()
-            .chain(predictable_inputs.iter().cloned().map(|local| {
-                let local_tick = local.local_tick;
-                let remote_tick = local.remote_tick;
-                input::Pair {
-                    local,
-                    remote: input::PartialInput {
-                        local_tick,
-                        remote_tick,
-                        joyflags: {
-                            let mut joyflags = 0;
-                            if last_remote_joyflags & mgba::input::keys::A as u16 != 0 {
-                                joyflags |= mgba::input::keys::A as u16;
-                            }
-                            if last_remote_joyflags & mgba::input::keys::B as u16 != 0 {
-                                joyflags |= mgba::input::keys::B as u16;
-                            }
-                            joyflags
-                        },
-                    },
-                }
-            }))
-            .collect::<Vec<input::Pair<input::PartialInput, input::PartialInput>>>();
-        let last_input = input_pairs.last().expect("last input pair").clone();
-
         *self.state.0.lock() = Some(InnerState {
-            current_tick: last_committed_tick,
+            current_tick,
             local_player_index: self.local_player_index,
             input_pairs: input_pairs.into_iter().collect(),
             apply_shadow_input,
@@ -343,7 +312,6 @@ impl Fastforwarder {
                     return Ok(FastforwardResult {
                         committed_state: state.committed_state.expect("committed state"),
                         dirty_state: state.dirty_state.expect("dirty state"),
-                        last_input,
                         round_result: state.round_result,
                     });
                 }

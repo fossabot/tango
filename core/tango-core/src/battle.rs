@@ -524,20 +524,55 @@ impl Round {
             joyflags,
         });
 
-        let (input_pairs, left) = self.iq.consume_and_peek_local();
-        if let Some(last) = input_pairs.last() {
+        let (committable, left) = self.iq.consume_and_peek_local();
+        if let Some(last) = committable.last() {
             self.last_committed_remote_input = last.remote.clone();
         }
 
         let last_committed_state = self.committed_state.take().expect("committed state");
-        let commit_tick = last_committed_state.tick + input_pairs.len() as u32;
+
+        let commit_tick = last_committed_state.tick + committable.len() as u32;
+        let dirty_tick = commit_tick + left.len() as u32 - 1;
+
+        let input_pairs = committable
+            .iter()
+            .cloned()
+            .chain(left.iter().cloned().map(|local| {
+                let local_tick = local.local_tick;
+                let remote_tick = local.remote_tick;
+                input::Pair {
+                    local,
+                    remote: input::PartialInput {
+                        local_tick,
+                        remote_tick,
+                        joyflags: {
+                            let mut joyflags = 0;
+                            if self.last_committed_remote_input.joyflags
+                                & mgba::input::keys::A as u16
+                                != 0
+                            {
+                                joyflags |= mgba::input::keys::A as u16;
+                            }
+                            if self.last_committed_remote_input.joyflags
+                                & mgba::input::keys::B as u16
+                                != 0
+                            {
+                                joyflags |= mgba::input::keys::B as u16;
+                            }
+                            joyflags
+                        },
+                    },
+                }
+            }))
+            .collect::<Vec<input::Pair<input::PartialInput, input::PartialInput>>>();
+        let last_local_input = input_pairs.last().unwrap().local.clone();
 
         let ff_result = self.replayer.fastforward(
             &last_committed_state.state,
+            input_pairs,
             last_committed_state.tick,
-            &input_pairs,
-            &left,
-            self.last_committed_remote_input.joyflags,
+            commit_tick,
+            dirty_tick,
             &last_committed_state.packet,
             Box::new({
                 let shadow = self.shadow.clone();
@@ -572,7 +607,7 @@ impl Round {
             .expect("load dirty state");
         self.committed_state = Some(ff_result.committed_state);
 
-        self.dtick = ff_result.last_input.local.lag() - self.last_committed_remote_input.lag();
+        self.dtick = last_local_input.lag() - self.last_committed_remote_input.lag();
 
         core.gba_mut()
             .sync_mut()
