@@ -1,7 +1,7 @@
 use crate::{facade, replayer, shadow};
 
 // mod bn2;
-// mod bn3;
+mod bn3;
 mod bn4;
 mod bn5;
 mod bn6;
@@ -24,10 +24,10 @@ pub fn get(mut core: mgba::core::CoreMutRef) -> Option<&'static Box<dyn Hooks + 
         (b"ROCK_EXE4_BMB4BJ", 0x01) => &bn4::ROCK_EXE4_BMB4BJ_01,
         (b"ROCK_EXE4_RSB4WJ", 0x00) => &bn4::ROCK_EXE4_RSB4WJ_00,
         (b"ROCK_EXE4_RSB4WJ", 0x01) => &bn4::ROCK_EXE4_RSB4WJ_01,
-        // (b"MEGA_EXE3_BLA3XE", 0x00) => &bn3::MEGA_EXE3_BLA3XE_00,
-        // (b"MEGA_EXE3_WHA6BE", 0x00) => &bn3::MEGA_EXE3_WHA6BE_00,
-        // (b"ROCK_EXE3_BKA3XJ", 0x01) => &bn3::ROCK_EXE3_BKA3XJ_01,
-        // (b"ROCKMAN_EXE3A6BJ", 0x01) => &bn3::ROCKMAN_EXE3A6BJ_01,
+        (b"MEGA_EXE3_BLA3XE", 0x00) => &bn3::MEGA_EXE3_BLA3XE_00,
+        (b"MEGA_EXE3_WHA6BE", 0x00) => &bn3::MEGA_EXE3_WHA6BE_00,
+        (b"ROCK_EXE3_BKA3XJ", 0x01) => &bn3::ROCK_EXE3_BKA3XJ_01,
+        (b"ROCKMAN_EXE3A6BJ", 0x01) => &bn3::ROCKMAN_EXE3A6BJ_01,
         // (b"MEGAMAN_EXE2AE2E", 0x00) => &bn2::MEGAMAN_EXE2AE2E_00,
         // (b"ROCKMAN_EXE2AE2J", 0x01) => &bn2::ROCKMAN_EXE2AE2J_01,
         _ => {
