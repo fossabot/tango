@@ -524,7 +524,7 @@ impl Round {
             joyflags,
         });
 
-        let (committable, left) = self.iq.consume_and_peek_local();
+        let (committable, predict_required) = self.iq.consume_and_peek_local();
         if let Some(last) = committable.last() {
             self.last_committed_remote_input = last.remote.clone();
         }
@@ -532,12 +532,12 @@ impl Round {
         let last_committed_state = self.committed_state.take().expect("committed state");
 
         let commit_tick = last_committed_state.tick + committable.len() as u32;
-        let dirty_tick = commit_tick + left.len() as u32 - 1;
+        let dirty_tick = commit_tick + predict_required.len() as u32 - 1;
 
         let input_pairs = committable
             .iter()
             .cloned()
-            .chain(left.iter().cloned().map(|local| {
+            .chain(predict_required.iter().cloned().map(|local| {
                 let local_tick = local.local_tick;
                 let remote_tick = local.remote_tick;
                 input::Pair {
@@ -576,14 +576,14 @@ impl Round {
             &last_committed_state.packet,
             Box::new({
                 let shadow = self.shadow.clone();
-                let mut last_commit = None;
+                let mut last_commit = vec![0u8; 0x10]; // TODO
                 move |si| {
-                    Ok(if si.tick <= commit_tick {
+                    Ok(if si.tick < commit_tick {
                         let r = shadow.lock().apply_input(si)?;
-                        last_commit = Some(r.clone());
+                        last_commit = r.clone();
                         r
                     } else {
-                        let r = last_commit.clone().unwrap();
+                        let r = last_commit.clone();
                         r
                     })
                 }
