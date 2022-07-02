@@ -577,9 +577,9 @@ impl Round {
             Box::new({
                 let shadow = self.shadow.clone();
                 let mut last_commit = vec![0u8; 0x10]; // TODO
-                move |si| {
-                    Ok(if si.local.local_tick < commit_tick {
-                        let r = shadow.lock().apply_input(si)?;
+                move |ip| {
+                    Ok(if ip.local.local_tick < commit_tick {
+                        let r = shadow.lock().apply_input(ip)?;
                         last_commit = r.clone();
                         r
                     } else {
