@@ -605,8 +605,8 @@ impl Round {
                 replay_writer
                     .write_input(self.local_player_index, ip)
                     .expect("write input");
-                self.last_committed_remote_input = ip.remote.clone();
             }
+            self.last_committed_remote_input = ip.remote.clone();
         }
 
         core.load_state(&ff_result.dirty_state.state)
