@@ -590,18 +590,18 @@ impl Round {
             }),
         )?;
 
-        // for ip in &ff_result.consumed_input_pairs {
-        //     if ip.local.local_tick >= commit_tick {
-        //         break;
-        //     }
+        for ip in &ff_result.output_pairs {
+            if ip.local.local_tick >= commit_tick {
+                break;
+            }
 
-        //     if let Some(replay_writer) = self.replay_writer.as_mut() {
-        //         log::info!("\n  {:02x?}\n  {:02x?}", ip.local.packet, ip.remote.packet);
-        //         replay_writer
-        //             .write_input(self.local_player_index, ip)
-        //             .expect("write input");
-        //     }
-        // }
+            if let Some(replay_writer) = self.replay_writer.as_mut() {
+                log::info!("\n  {:02x?}\n  {:02x?}", ip.local.packet, ip.remote.packet);
+                replay_writer
+                    .write_input(self.local_player_index, ip)
+                    .expect("write input");
+            }
+        }
 
         core.load_state(&ff_result.dirty_state.state)
             .expect("load dirty state");

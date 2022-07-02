@@ -33,6 +33,7 @@ pub struct FastforwardResult {
     pub committed_state: battle::CommittedState,
     pub dirty_state: battle::CommittedState,
     pub round_result: Option<RoundResult>,
+    pub output_pairs: Vec<input::Pair<input::Input, input::Input>>,
 }
 
 #[derive(Clone, Copy, serde_repr::Serialize_repr)]
@@ -209,7 +210,12 @@ impl State {
     ) -> anyhow::Result<Vec<u8>> {
         let mut inner = self.0.lock();
         let inner = inner.as_mut().expect("apply shadow input");
-        (inner.apply_shadow_input)(input)
+        let remote_packet = (inner.apply_shadow_input)(input.clone())?;
+        inner.output_pairs.push(input::Pair {
+            local: input.local,
+            remote: input.remote.with_packet(remote_packet.clone()),
+        });
+        Ok(remote_packet)
     }
 
     pub fn set_local_packet(&self, tick: u32, packet: Vec<u8>) {
@@ -352,6 +358,7 @@ impl Fastforwarder {
                         committed_state: state.committed_state.expect("committed state"),
                         dirty_state: state.dirty_state.expect("dirty state"),
                         round_result: state.round_result,
+                        output_pairs: state.output_pairs,
                     });
                 }
                 inner_state.error = None;
