@@ -1060,7 +1060,8 @@ impl hooks::Hooks for BN6 {
                             );
                         }
 
-                        replayer_state.set_local_packet(munger.tx_packet(core).to_vec());
+                        replayer_state
+                            .set_local_packet(current_tick + 1, munger.tx_packet(core).to_vec());
                     }),
                 )
             },

@@ -1,4 +1,4 @@
-use crate::{battle, facade, hooks, input, replayer, shadow};
+use crate::{battle, facade, hooks, replayer, shadow};
 
 mod munger;
 mod offsets;
@@ -265,7 +265,6 @@ impl hooks::Hooks for BN5 {
             },
             {
                 let facade = facade.clone();
-                let munger = self.munger.clone();
                 let handle = handle.clone();
                 (
                     self.offsets.rom.round_start_ret,
@@ -1041,7 +1040,8 @@ impl hooks::Hooks for BN5 {
                             );
                         }
 
-                        replayer_state.set_local_packet(munger.tx_packet(core).to_vec());
+                        replayer_state
+                            .set_local_packet(current_tick + 1, munger.tx_packet(core).to_vec());
                     }),
                 )
             },

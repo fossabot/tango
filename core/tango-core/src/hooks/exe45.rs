@@ -1,7 +1,7 @@
 mod munger;
 mod offsets;
 
-use crate::{battle, facade, hooks, input, replayer, shadow};
+use crate::{battle, facade, hooks, replayer, shadow};
 
 #[derive(Clone)]
 pub struct EXE45 {
@@ -310,11 +310,10 @@ impl hooks::Hooks for EXE45 {
             },
             {
                 let facade = facade.clone();
-                let munger = self.munger.clone();
                 let handle = handle.clone();
                 (
                     self.offsets.rom.round_start_ret,
-                    Box::new(move |core| {
+                    Box::new(move |_core| {
                         handle.block_on(async {
                             let match_ = match facade.match_().await {
                                 Some(match_) => match_,
@@ -962,7 +961,10 @@ impl hooks::Hooks for EXE45 {
                         if replayer_state.is_round_ending() {
                             return;
                         }
-                        replayer_state.set_local_packet(munger.tx_packet(core).to_vec());
+                        replayer_state.set_local_packet(
+                            replayer_state.current_tick() + 1,
+                            munger.tx_packet(core).to_vec(),
+                        );
                     }),
                 )
             },
@@ -975,7 +977,10 @@ impl hooks::Hooks for EXE45 {
                         if replayer_state.is_round_ending() {
                             return;
                         }
-                        replayer_state.set_local_packet(munger.tx_packet(core).to_vec());
+                        replayer_state.set_local_packet(
+                            replayer_state.current_tick() + 1,
+                            munger.tx_packet(core).to_vec(),
+                        );
                     }),
                 )
             },
@@ -988,7 +993,10 @@ impl hooks::Hooks for EXE45 {
                         if replayer_state.is_round_ending() {
                             return;
                         }
-                        replayer_state.set_local_packet(munger.tx_packet(core).to_vec());
+                        replayer_state.set_local_packet(
+                            replayer_state.current_tick() + 1,
+                            munger.tx_packet(core).to_vec(),
+                        );
                     }),
                 )
             },

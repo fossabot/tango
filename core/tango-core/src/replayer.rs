@@ -3,12 +3,18 @@ use crate::hooks;
 use crate::input;
 use crate::shadow;
 
+#[derive(Clone)]
+struct Packet {
+    packet: Vec<u8>,
+    tick: u32,
+}
+
 struct InnerState {
     current_tick: u32,
     local_player_index: u8,
     input_pairs: std::collections::VecDeque<input::Pair<input::PartialInput, input::PartialInput>>,
     apply_shadow_input: Box<dyn FnMut(shadow::Input) -> anyhow::Result<Vec<u8>> + Sync + Send>,
-    local_packet: Option<Vec<u8>>,
+    local_packet: Option<Packet>,
     commit_tick: u32,
     committed_state: Option<battle::CommittedState>,
     dirty_tick: u32,
@@ -63,7 +69,10 @@ impl State {
         commit_tick: u32,
         on_round_ended: Box<dyn Fn() + Sync + Send>,
     ) -> State {
-        let local_packet = input_pairs.first().map(|ip| ip.local.packet.clone());
+        let local_packet = input_pairs.first().map(|ip| Packet {
+            tick: ip.local.local_tick,
+            packet: ip.local.packet.clone(),
+        });
         State(std::sync::Arc::new(parking_lot::Mutex::new(Some(
             InnerState {
                 current_tick: 0,
@@ -129,10 +138,17 @@ impl State {
     pub fn set_committed_state(&self, state: mgba::state::State) {
         let mut inner = self.0.lock();
         let inner = inner.as_mut().expect("committed state");
+        let local_packet = inner.local_packet.clone().unwrap();
+        if inner.current_tick != local_packet.tick {
+            panic!(
+                "local packet tick mismatch: {} != {}",
+                inner.current_tick, local_packet.tick
+            );
+        }
         inner.committed_state = Some(battle::CommittedState {
             tick: inner.current_tick,
             state,
-            packet: inner.local_packet.clone().unwrap(),
+            packet: local_packet.packet,
         });
     }
 
@@ -152,10 +168,17 @@ impl State {
     pub fn set_dirty_state(&self, state: mgba::state::State) {
         let mut inner = self.0.lock();
         let inner = inner.as_mut().expect("dirty state");
+        let local_packet = inner.local_packet.clone().unwrap();
+        if inner.current_tick != local_packet.tick {
+            panic!(
+                "local packet tick mismatch: {} != {}",
+                inner.current_tick, local_packet.tick
+            );
+        }
         inner.dirty_state = Some(battle::CommittedState {
             tick: inner.current_tick,
             state,
-            packet: inner.local_packet.clone().unwrap(),
+            packet: local_packet.packet,
         });
     }
 
@@ -181,8 +204,8 @@ impl State {
         (inner.apply_shadow_input)(input)
     }
 
-    pub fn set_local_packet(&self, packet: Vec<u8>) {
-        self.0.lock().as_mut().expect("local packet").local_packet = Some(packet);
+    pub fn set_local_packet(&self, tick: u32, packet: Vec<u8>) {
+        self.0.lock().as_mut().expect("local packet").local_packet = Some(Packet { tick, packet });
     }
 
     pub fn set_anyhow_error(&self, err: anyhow::Error) {
@@ -292,7 +315,10 @@ impl Fastforwarder {
             local_player_index: self.local_player_index,
             input_pairs: input_pairs.into_iter().collect(),
             apply_shadow_input,
-            local_packet: Some(last_local_packet.to_vec()),
+            local_packet: Some(Packet {
+                tick: current_tick,
+                packet: last_local_packet.to_vec(),
+            }),
             commit_tick,
             committed_state: None,
             dirty_tick,
